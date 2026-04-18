@@ -1,0 +1,1460 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PIXEL90 — Sistema de Gestión</title>
+<style>
+/* ── RESET & VARS ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --cyan:    #00E5FF; --magenta: #FF00C8; --lime:    #AAFF00; --orange:  #FF6B00;
+  --bg:      #0A0A0F; --bg2:     #111118; --bg3:     #1A1A24; --bg4:     #22222E;
+  --border:  #2A2A3A; --text:    #E8E8F0; --muted:   #888899;
+  --danger:  #FF4455; --success: #00FF88; --warn:    #FFB700;
+  --font:    'Segoe UI', system-ui, sans-serif; --radius:  10px;
+}
+body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; overflow-x: hidden; }
+a { color: var(--cyan); text-decoration: none; }
+input, select, textarea {
+  background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 8px 12px; font-size: 14px; font-family: var(--font);
+  outline: none; width: 100%; transition: border-color .2s;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--cyan); }
+button { cursor: pointer; border: none; border-radius: 6px; padding: 8px 16px;
+  font-size: 13px; font-weight: 600; font-family: var(--font); transition: all .15s; }
+.btn-primary { background: var(--cyan); color: #000; }
+.btn-primary:hover { background: #00c8e0; }
+.btn-secondary { background: var(--bg3); color: var(--text); border: 1px solid var(--border); }
+.btn-secondary:hover { border-color: var(--cyan); color: var(--cyan); }
+.btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+.btn-danger:hover { background: var(--danger); color: #fff; }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+table { width: 100%; border-collapse: collapse; }
+th { background: var(--bg3); color: var(--muted); font-size: 11px; font-weight: 600;
+     text-transform: uppercase; letter-spacing: .06em; padding: 10px 14px; text-align: left; }
+td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(0,229,255,.03); }
+.badge { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+.badge-ok { background: rgba(0,255,136,.15); color: var(--success); }
+.badge-warn { background: rgba(255,183,0,.15); color: var(--warn); }
+.badge-danger { background: rgba(255,68,85,.15); color: var(--danger); }
+.badge-cyan { background: rgba(0,229,255,.15); color: var(--cyan); }
+.badge-magenta { background: rgba(255,0,200,.15); color: var(--magenta); }
+.badge-lime { background: rgba(170,255,0,.15); color: var(--lime); }
+.badge-orange { background: rgba(255,107,0,.15); color: var(--orange); }
+.card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+.section-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+.form-grid { display: grid; gap: 12px; }
+.form-grid.cols2 { grid-template-columns: 1fr 1fr; }
+.form-grid.cols3 { grid-template-columns: 1fr 1fr 1fr; }
+.form-label { font-size: 11px; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .05em; }
+.form-group { display: flex; flex-direction: column; }
+.divider { height: 1px; background: var(--border); margin: 16px 0; }
+.empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+.empty-state img { width: 120px; margin-bottom: 16px; opacity: .7; border-radius: 12px; }
+.empty-state p { font-size: 15px; margin-bottom: 8px; }
+.empty-state small { font-size: 12px; }
+#app { display: flex; height: 100vh; }
+#sidebar { width: 220px; min-width: 220px; background: var(--bg2); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow-y: auto; }
+.sidebar-logo { padding: 20px 16px 12px; border-bottom: 1px solid var(--border); position: relative; }
+.glitch-logo { position: relative; display: inline-block; width: 100%; max-width: 160px; }
+.glitch-logo img { width: 100%; display: block; position: relative; z-index: 1; }
+.glitch-logo::before, .glitch-logo::after {
+  content: ''; position: absolute; inset: 0;
+  background-image: url('/static/img/logo.png'); background-size: 100% 100%;
+  width: 100%; height: 100%; opacity: 0.75;
+}
+.glitch-logo::before { animation: glitch-before 3.5s infinite steps(1); mix-blend-mode: screen; filter: hue-rotate(180deg) saturate(3); }
+.glitch-logo::after { animation: glitch-after 3.5s infinite steps(1); mix-blend-mode: screen; filter: hue-rotate(300deg) saturate(3); }
+@keyframes glitch-before {
+  0%,89% { clip-path: inset(100% 0 0 0); transform: translate(0,0); }
+  90% { clip-path: inset(15% 0 70% 0); transform: translate(-3px, 1px); }
+  91% { clip-path: inset(55% 0 20% 0); transform: translate(3px,-1px); }
+  92% { clip-path: inset(30% 0 50% 0); transform: translate(-2px, 2px); }
+  93% { clip-path: inset(70% 0 5% 0); transform: translate(2px,-2px); }
+  94%,100% { clip-path: inset(100% 0 0 0); transform: translate(0,0); }
+}
+@keyframes glitch-after {
+  0%,89% { clip-path: inset(100% 0 0 0); transform: translate(0,0); }
+  90% { clip-path: inset(40% 0 40% 0); transform: translate(3px,-1px); }
+  91% { clip-path: inset(10% 0 75% 0); transform: translate(-3px, 1px); }
+  92% { clip-path: inset(60% 0 15% 0); transform: translate(2px, 2px); }
+  93% { clip-path: inset(80% 0 2% 0); transform: translate(-2px,-2px); }
+  94%,100% { clip-path: inset(100% 0 0 0); transform: translate(0,0); }
+}
+.nav-section { padding: 12px 10px 4px; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+.nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 8px; margin: 1px 8px;
+  cursor: pointer; transition: all .15s; color: var(--muted); font-size: 13px; position: relative; }
+.nav-item:hover { background: var(--bg3); color: var(--text); }
+.nav-item.active { background: rgba(0,229,255,.1); color: var(--cyan); font-weight: 600; }
+.nav-item .icon { font-size: 16px; width: 20px; text-align: center; }
+.nav-badge { position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  background: var(--danger); color: #fff; font-size: 10px; font-weight: 800;
+  min-width: 18px; height: 18px; border-radius: 9px; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
+.sidebar-mascot { padding: 16px; margin-top: auto; }
+.sidebar-mascot img { width: 100%; border-radius: 12px; opacity: .85; }
+#main { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+.topbar { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 14px 24px;
+  display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 10; }
+.topbar-title { font-size: 16px; font-weight: 700; }
+.topbar-sub { font-size: 12px; color: var(--muted); }
+#content { padding: 24px; flex: 1; }
+.tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 0; }
+.tab-btn { background: none; color: var(--muted); border: none; border-bottom: 2px solid transparent;
+  border-radius: 0; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+  margin-bottom: -1px; transition: all .15s; }
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+.kpi-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 18px 20px; position: relative; overflow: hidden; }
+.kpi-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+.kpi-card.cyan::before { background: var(--cyan); }
+.kpi-card.magenta::before { background: var(--magenta); }
+.kpi-card.lime::before { background: var(--lime); }
+.kpi-card.orange::before { background: var(--orange); }
+.kpi-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 8px; }
+.kpi-value { font-size: 22px; font-weight: 800; }
+.kpi-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+.chart-row { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 24px; }
+.chart-wrap { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+.chart-title { font-size: 13px; font-weight: 700; margin-bottom: 16px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.bar-chart { display: flex; align-items: flex-end; gap: 6px; height: 160px; padding-top: 28px; position: relative; }
+.bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; position: relative; }
+.bar-wrap { display: flex; gap: 3px; align-items: flex-end; width: 100%; height: 130px; }
+.bar { flex: 1; border-radius: 3px 3px 0 0; min-height: 3px; transition: height .4s ease, opacity .15s; cursor: pointer; position: relative; }
+.bar:hover { opacity: .75; }
+.bar-label { font-size: 10px; color: var(--muted); text-align: center; margin-top: 6px; }
+.bar-top-label { position: absolute; top: -20px; left: 50%; transform: translateX(-50%);
+  font-size: 9px; font-weight: 700; white-space: nowrap; opacity: 0; transition: opacity .15s; pointer-events: none; }
+.bar-col:hover .bar-top-label { opacity: 1; }
+.chart-tooltip { position: absolute; background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 14px; font-size: 12px; pointer-events: none;
+  z-index: 20; min-width: 160px; opacity: 0; transition: opacity .15s; box-shadow: 0 4px 20px rgba(0,0,0,.4); }
+.chart-tooltip.visible { opacity: 1; }
+.chart-tooltip .tt-mes { font-weight: 700; margin-bottom: 6px; font-size: 13px; }
+.chart-tooltip .tt-row { display: flex; justify-content: space-between; gap: 16px; padding: 2px 0; }
+.chart-tooltip .tt-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+.chart-tooltip .tt-gan { border-top: 1px solid var(--border); margin-top: 5px; padding-top: 5px; font-weight: 700; }
+.donut-wrap { display: flex; flex-direction: column; gap: 8px; }
+.donut-item { display: flex; align-items: center; gap: 10px; }
+.donut-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.donut-label { flex: 1; font-size: 12px; }
+.donut-val { font-size: 12px; font-weight: 700; }
+.alert-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+  background: rgba(255,68,85,.06); border: 1px solid rgba(255,68,85,.2); border-radius: 8px; margin-bottom: 8px; }
+.alert-icon { font-size: 18px; }
+.alert-name { flex: 1; font-size: 13px; font-weight: 600; }
+.alert-stock { font-size: 12px; color: var(--danger); }
+.modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.7);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100; opacity: 0; pointer-events: none; transition: opacity .2s; }
+.modal-bg.open { opacity: 1; pointer-events: all; }
+.modal { background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; padding: 28px;
+  width: 90%; max-width: 620px; max-height: 90vh; overflow-y: auto;
+  transform: translateY(20px); transition: transform .2s; }
+.modal-bg.open .modal { transform: translateY(0); }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.modal-title { font-size: 17px; font-weight: 800; }
+.modal-close { background: var(--bg3); border: none; color: var(--muted); width: 30px; height: 30px;
+  border-radius: 50%; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.modal-close:hover { background: var(--danger); color: #fff; }
+.modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+.toolbar { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
+.toolbar-search { flex: 1; min-width: 160px; max-width: 280px; }
+.toolbar input { background: var(--bg3); }
+.estado-Pendiente { color: var(--warn); }
+.estado-En.Producción { color: var(--cyan); }
+.estado-Listo { color: var(--lime); }
+.estado-Entregado { color: var(--success); }
+.estado-Cancelado { color: var(--danger); }
+.estado-Reingreso { color: var(--orange); }
+.cost-row { display: flex; justify-content: space-between; padding: 8px 0;
+  border-bottom: 1px solid var(--border); font-size: 13px; }
+.cost-row.total { font-weight: 800; font-size: 15px; border-bottom: none; color: var(--cyan); padding-top: 12px; }
+.cost-row.precio-min { font-weight: 800; font-size: 15px; border-bottom: none; color: var(--lime); }
+.cost-row.precio-sug { font-weight: 800; font-size: 16px; border-bottom: none; color: var(--magenta); }
+.cost-label { color: var(--muted); }
+#toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
+.toast { background: var(--bg3); border: 1px solid var(--border); padding: 12px 18px; border-radius: 8px;
+  font-size: 13px; animation: slideIn .2s ease; min-width: 220px; }
+.toast.success { border-color: var(--success); color: var(--success); }
+.toast.error { border-color: var(--danger); color: var(--danger); }
+@keyframes slideIn { from { transform: translateX(40px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes glitch { 0%,90%,100% { text-shadow: none; } 92% { text-shadow: 2px 0 var(--cyan), -2px 0 var(--magenta); } 95% { text-shadow: -2px 0 var(--cyan), 2px 0 var(--magenta); } }
+.glitch-text { animation: glitch 4s infinite; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+/* Autocomplete dropdown */
+.autocomplete-list { position: absolute; top: 100%; left: 0; right: 0; background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 0 0 6px 6px; max-height: 180px; overflow-y: auto; z-index: 50; }
+.autocomplete-item { padding: 8px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid var(--border); }
+.autocomplete-item:hover { background: rgba(0,229,255,.1); color: var(--cyan); }
+/* Cuota +/- buttons */
+.cuota-btn { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 800; padding: 0; }
+@media (max-width: 768px) {
+  #sidebar { width: 60px; min-width: 60px; }
+  .nav-item span:not(.icon) { display: none; }
+  .nav-section { display: none; }
+  .sidebar-logo img { display: none; }
+  .kpi-grid { grid-template-columns: 1fr 1fr; }
+  .chart-row { grid-template-columns: 1fr; }
+  .form-grid.cols2, .form-grid.cols3 { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+<nav id="sidebar">
+  <div class="sidebar-logo"><div class="glitch-logo"><img src="/static/img/logo.png" alt="PIXEL90"></div></div>
+  <div class="nav-section">Principal</div>
+  <div class="nav-item active" onclick="navigate('dashboard')"><span class="icon">📊</span><span>Dashboard</span></div>
+  <div class="nav-section">Producción</div>
+  <div class="nav-item" onclick="navigate('insumos')" id="nav-insumos"><span class="icon">📦</span><span>Insumos</span><span class="nav-badge" id="alerta-badge" style="display:none">0</span></div>
+  <div class="nav-item" onclick="navigate('consumos')"><span class="icon">📋</span><span>Consumos</span></div>
+  <div class="nav-item" onclick="navigate('productos')"><span class="icon">🧾</span><span>Productos</span></div>
+  <div class="nav-section">Comercial</div>
+  <div class="nav-item" onclick="navigate('clientes')"><span class="icon">👥</span><span>Clientes</span></div>
+  <div class="nav-item" onclick="navigate('pedidos')"><span class="icon">🛒</span><span>Pedidos</span></div>
+  <div class="nav-item" onclick="navigate('gastos')"><span class="icon">💸</span><span>Gastos</span></div>
+  <div class="nav-item" onclick="navigate('marketing')"><span class="icon">📣</span><span>Marketing</span></div>
+  <div class="nav-item" onclick="navigate('stock')" id="nav-stock"><span class="icon">🔄</span><span>Stock</span><span class="nav-badge" id="stock-badge" style="display:none;background:var(--success)">0</span></div>
+  <div class="nav-section">Ajustes</div>
+  <div class="nav-item" onclick="navigate('inventario')"><span class="icon">🖨️</span><span>Inventario</span></div>
+  <div class="nav-item" onclick="navigate('parametros')"><span class="icon">⚙️</span><span>Parámetros</span></div>
+  <div class="sidebar-mascot"><img src="/static/img/PIXIE.png" alt="mascota"></div>
+</nav>
+<div id="main">
+  <div class="topbar">
+    <div><div class="topbar-title glitch-text" id="page-title">Dashboard</div><div class="topbar-sub" id="page-sub">Resumen del negocio</div></div>
+    <div style="display:flex;gap:8px"><button class="btn-secondary btn-sm" onclick="exportCSV()">⬇ Exportar</button></div>
+  </div>
+  <div id="content"></div>
+</div>
+</div>
+<div class="modal-bg" id="modal-bg" onclick="closeModal(event)">
+  <div class="modal" id="modal">
+    <div class="modal-header"><span class="modal-title" id="modal-title">Modal</span>
+      <button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div id="modal-body"></div>
+    <div class="modal-footer" id="modal-footer"></div>
+  </div>
+</div>
+<div id="toast-container"></div>
+<script>
+// ── UTILS ─────────────────────────────────────────────────────────
+const fmt = n => new Intl.NumberFormat('es-PY').format(Math.round(n || 0)) + ' ₲';
+const fmtN = n => new Intl.NumberFormat('es-PY').format(+(n || 0).toFixed(2));
+const today = () => new Date().toISOString().split('T')[0];
+const v = id => document.getElementById(id)?.value || '';
+
+function toast(msg, type='success') {
+  const c = document.getElementById('toast-container');
+  const t = document.createElement('div'); t.className = `toast ${type}`; t.textContent = msg;
+  c.appendChild(t); setTimeout(() => t.remove(), 3000);
+}
+
+async function api(url, method='GET', body=null) {
+  const opts = { method, headers: {'Content-Type':'application/json'} };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(url, opts);
+  if (!r.ok) { toast('Error en la petición','error'); throw new Error(r.status); }
+  return r.json();
+}
+
+function openModal(title, bodyHTML, footerHTML='') {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').innerHTML = bodyHTML;
+  document.getElementById('modal-footer').innerHTML = footerHTML;
+  document.getElementById('modal-bg').classList.add('open');
+}
+function closeModal(e) {
+  if (!e || e.target === document.getElementById('modal-bg'))
+    document.getElementById('modal-bg').classList.remove('open');
+}
+
+// ── THOUSAND SEPARATOR FOR NUMBER INPUTS (I) ──────────────────────
+function setupThousandSep(input) {
+  if (!input || input.dataset.tsBound) return;
+  input.dataset.tsBound = '1';
+  input.type = 'text';
+  input.addEventListener('input', function() {
+    let raw = this.value.replace(/\D/g, '');
+    if (raw === '') { this.value = ''; return; }
+    this.value = parseInt(raw).toLocaleString('es-PY');
+  });
+}
+function numVal(id) {
+  const el = document.getElementById(id);
+  if (!el) return 0;
+  return parseFloat(el.value.replace(/\./g, '').replace(/,/g, '')) || 0;
+}
+// Auto-apply to all number-like inputs after modal opens
+const origOpen = openModal;
+openModal = function(title, body, footer) {
+  origOpen(title, body, footer);
+  setTimeout(() => {
+    document.querySelectorAll('#modal input[type="number"]').forEach(inp => {
+      if (!inp.classList.contains('no-sep')) setupThousandSep(inp);
+    });
+  }, 50);
+};
+
+const CAT_COLORS = { 'Sublimación':'cyan','DTF':'magenta','Stickers':'lime','Cuadros':'orange','General':'muted' };
+const TIPO_BADGE = { 'VENTA':'badge-cyan','PRUEBA':'badge-lime','MERMA':'badge-danger','CALIBRACIÓN':'badge-magenta','MUESTRA':'badge-orange','OTRO':'badge-warn' };
+const ESTADO_BADGE = { 'Pendiente':'badge-warn','En Producción':'badge-cyan','Listo':'badge-lime','Entregado':'badge-ok','Entregado (R)':'badge-orange','Cancelado':'badge-danger','Reingreso':'badge-orange' };
+
+// ── NAVIGATION ─────────────────────────────────────────────────────
+const PAGES = {
+  dashboard:  { title: 'Dashboard', sub: 'Resumen del negocio' },
+  insumos:    { title: 'Insumos', sub: 'Stock en unidades de consumo' },
+  consumos:   { title: 'Consumos', sub: 'Ventas · Pruebas · Mermas · Calibraciones' },
+  productos:  { title: 'Productos & Recetas', sub: 'Costos y precios mínimos' },
+  clientes:   { title: 'Clientes', sub: 'Base de datos de clientes' },
+  pedidos:    { title: 'Pedidos', sub: 'Historial de pedidos' },
+  gastos:     { title: 'Gastos', sub: 'Egresos por categoría' },
+  marketing:  { title: 'Marketing', sub: 'Campañas y ROI' },
+  stock:      { title: 'Stock de Reingreso', sub: 'Productos devueltos' },
+  inventario: { title: 'Inventario', sub: 'Amortización de maquinaria' },
+  parametros: { title: 'Parámetros', sub: 'Configuración del negocio' },
+};
+
+let currentPage = '';
+function navigate(page) {
+  currentPage = page;
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  document.querySelector(`[onclick="navigate('${page}')"]`)?.classList.add('active');
+  const p = PAGES[page] || {};
+  document.getElementById('page-title').textContent = p.title || page;
+  document.getElementById('page-sub').textContent = p.sub || '';
+  const renderers = {
+    dashboard: renderDashboard, insumos: renderInsumos,
+    consumos: renderConsumos, productos: renderProductos,
+    clientes: renderClientes, pedidos: renderPedidos,
+    gastos: renderGastos, marketing: renderMarketing,
+    stock: renderStock, inventario: renderInventario,
+    parametros: renderParametros,
+  };
+  (renderers[page] || (() => {}))();
+  updateAlertBadge();
+}
+
+async function updateAlertBadge() {
+  try {
+    const r = await api('/api/alertas_count');
+    const badge = document.getElementById('alerta-badge');
+    if (badge) {
+      if (r.count > 0) { badge.textContent = r.count; badge.style.display = 'flex'; }
+      else { badge.style.display = 'none'; }
+    }
+    // Stock badge
+    const stockBadge = document.getElementById('stock-badge');
+    if (stockBadge) {
+      if (r.stock_count > 0) { stockBadge.textContent = r.stock_count; stockBadge.style.display = 'flex'; }
+      else { stockBadge.style.display = 'none'; }
+    }
+  } catch(e) {}
+}
+
+// ── DASHBOARD ─────────────────────────────────────────────────────
+async function renderDashboard() {
+  const d = await api('/api/dashboard');
+  const MONTHS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const MONTHS_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const [yr, mo] = (d.mes_referencia || '').split('-');
+  const mesLabel = yr ? `${MONTHS_FULL[parseInt(mo)-1]} ${yr}` : 'Mes actual';
+  const maxV = Math.max(...d.historico.map(m => Math.max(m.ventas, m.gastos)), 1);
+  const bars = d.historico.map((m, idx) => {
+    const hv = Math.max(Math.round((m.ventas / maxV) * 130), m.ventas > 0 ? 3 : 0);
+    const hg = Math.max(Math.round((m.gastos / maxV) * 130), m.gastos > 0 ? 3 : 0);
+    const label = MONTHS[parseInt(m.mes.split('-')[1]) - 1];
+    return `<div class="bar-col" id="bar-col-${idx}" onmouseenter="showTooltip(${idx})" onmouseleave="hideTooltip()">
+      <div class="bar-top-label" style="color:var(--cyan)">${m.ventas > 0 ? fmt(m.ventas) : ''}</div>
+      <div class="bar-wrap">
+        <div class="bar" style="background:var(--cyan);height:${hv}px"></div>
+        <div class="bar" style="background:var(--magenta);height:${hg}px"></div>
+      </div><div class="bar-label">${label}</div></div>`;
+  }).join('');
+  const alertHTML = d.alertas.length
+    ? d.alertas.map(a => `<div class="alert-item"><span class="alert-icon">⚠️</span>
+        <span class="alert-name">${a.nombre}</span>
+        <span class="alert-stock">Stock: ${fmtN(a.stock)} / Mín: ${fmtN(a.minimo)}</span>
+        <button class="btn-danger btn-sm" onclick="navigate('insumos')">Ver</button></div>`).join('')
+    : `<div class="empty-state" style="padding:20px"><p>✅ Todos los insumos tienen stock suficiente</p></div>`;
+  const catColors = ['var(--cyan)','var(--magenta)','var(--lime)','var(--orange)'];
+  const catHTML = d.por_categoria.map((c,i) => `<div class="donut-item">
+    <div class="donut-dot" style="background:${catColors[i%4]}"></div>
+    <span class="donut-label">${c.categoria}</span><span class="donut-val">${fmt(c.total)}</span></div>`).join('') || `<div style="color:var(--muted);font-size:13px">Sin ventas este mes</div>`;
+  document.getElementById('content').innerHTML = `
+    <div class="kpi-grid">
+      <div class="kpi-card cyan"><div class="kpi-label">Ventas — ${mesLabel}</div><div class="kpi-value">${fmt(d.ventas_mes)}</div><div class="kpi-sub">${d.pedidos_mes} pedidos</div></div>
+      <div class="kpi-card magenta"><div class="kpi-label">Gastos — ${mesLabel}</div><div class="kpi-value">${fmt(d.gastos_mes)}</div></div>
+      <div class="kpi-card lime"><div class="kpi-label">Ganancia — ${mesLabel}</div><div class="kpi-value" style="color:${d.ganancia>=0?'var(--success)':'var(--danger)'}">${fmt(d.ganancia)}</div><div class="kpi-sub">Margen ${d.margen}%</div></div>
+      <div class="kpi-card orange"><div class="kpi-label">Pedidos pendientes</div><div class="kpi-value">${d.pendientes}</div><div class="kpi-sub">en producción</div></div>
+    </div>
+    <div class="chart-row">
+      <div class="chart-wrap" style="position:relative"><div class="chart-title">Ventas vs Gastos — últimos 6 meses</div>
+        <div class="bar-chart" id="bar-chart-main">${bars}</div>
+        <div style="display:flex;gap:16px;margin-top:8px;font-size:11px;color:var(--muted)">
+          <span><span style="color:var(--cyan)">■</span> Ventas</span><span><span style="color:var(--magenta)">■</span> Gastos</span></div>
+        <div class="chart-tooltip" id="chart-tooltip"></div></div>
+      <div class="chart-wrap"><div class="chart-title">Ventas por categoría</div><div class="donut-wrap">${catHTML}</div></div>
+    </div>
+    <div class="card"><div class="section-title">⚠️ Alertas de stock</div>${alertHTML}</div>`;
+  window._historico = d.historico;
+}
+
+const MONTHS_FULL_G = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+function showTooltip(idx) {
+  const tt = document.getElementById('chart-tooltip'); const col = document.getElementById(`bar-col-${idx}`);
+  if (!tt || !col || !window._historico) return;
+  const m = window._historico[idx]; if (!m) return;
+  const mes = m.mes.split('-'); const mesNombre = MONTHS_FULL_G[parseInt(mes[1]) - 1] + ' ' + mes[0];
+  const gan = m.ventas - m.gastos; const ganColor = gan >= 0 ? 'var(--success)' : 'var(--danger)';
+  const margen = m.ventas > 0 ? ((gan / m.ventas) * 100).toFixed(1) : '0.0';
+  tt.innerHTML = `<div class="tt-mes">${mesNombre}</div>
+    <div class="tt-row"><span><span class="tt-dot" style="background:var(--cyan)"></span>Ventas</span><strong style="color:var(--cyan)">${fmt(m.ventas)}</strong></div>
+    <div class="tt-row"><span><span class="tt-dot" style="background:var(--magenta)"></span>Gastos</span><strong style="color:var(--magenta)">${fmt(m.gastos)}</strong></div>
+    <div class="tt-row tt-gan"><span>Ganancia</span><strong style="color:${ganColor}">${fmt(gan)}</strong></div>
+    <div class="tt-row" style="font-size:11px;color:var(--muted)"><span>Margen</span><span>${margen}%</span></div>`;
+  const chartRect = document.getElementById('bar-chart-main').getBoundingClientRect();
+  const colRect = col.getBoundingClientRect(); const ttW = 170;
+  let left = colRect.left - chartRect.left + col.offsetWidth / 2 - ttW / 2;
+  left = Math.max(0, Math.min(left, chartRect.width - ttW));
+  tt.style.left = left + 'px'; tt.style.bottom = (col.offsetHeight + 12) + 'px'; tt.classList.add('visible');
+}
+function hideTooltip() { document.getElementById('chart-tooltip')?.classList.remove('visible'); }
+
+// ── INSUMOS (antes "Inventario") ──────────────────────────────────
+async function renderInsumos() {
+  const insumos = await api('/api/insumos');
+  const rows = insumos.map(i => {
+    const alertBadge = i.alerta ? `<span class="badge badge-danger">⚠ REPONER</span>` : `<span class="badge badge-ok">✓ OK</span>`;
+    const catColor = CAT_COLORS[i.categoria] || 'muted';
+    return `<tr><td><strong>${i.nombre}</strong></td>
+      <td><span class="badge badge-${catColor}">${i.categoria}</span></td>
+      <td style="color:var(--muted)">${i.unidad_compra || '—'}</td>
+      <td>${fmtN(i.uds_por_pack)}</td><td>${fmt(i.precio_pack)}</td>
+      <td style="color:var(--cyan)">${fmt(i.costo_unitario)} / ${i.unidad_consum||'ud'}</td>
+      <td><strong style="color:${i.alerta?'var(--danger)':'var(--text)'}">${fmtN(i.stock_actual)}</strong> ${i.unidad_consum||''}</td>
+      <td>${fmtN(i.stock_minimo)}</td><td>${alertBadge}</td>
+      <td><div style="display:flex;gap:6px">
+        <button class="btn-secondary btn-sm" onclick="modalCompra(${i.id},'${i.nombre.replace(/'/g,"\\'")}')">+ Stock</button>
+        <button class="btn-secondary btn-sm" onclick="modalEditInsumo(${i.id})">✏</button>
+      </div></td></tr>`;
+  }).join('');
+  document.getElementById('content').innerHTML = `
+    <div class="toolbar"><input class="toolbar-search" type="text" placeholder="🔍 Buscar insumo..." oninput="filterTable(this,'inv-table')">
+      <button class="btn-primary" onclick="modalNuevoInsumo()">+ Nuevo insumo</button></div>
+    <div class="card" style="padding:0;overflow:hidden"><table id="inv-table"><thead><tr>
+      <th>Insumo</th><th>Categoría</th><th>Ud. compra</th><th>Uds/pack</th><th>Precio pack</th><th>Costo unit.</th>
+      <th>Stock actual</th><th>Mínimo</th><th>Alerta</th><th>Acciones</th></tr></thead>
+      <tbody>${rows || emptyState('Sin insumos cargados')}</tbody></table></div>`;
+}
+
+async function modalNuevoInsumo(data={}) {
+  const isEdit = !!data.id;
+  openModal(isEdit ? 'Editar insumo' : 'Nuevo insumo', `
+    <div class="form-grid cols2">
+      <div class="form-group"><div class="form-label">Nombre</div><input id="f-nombre" value="${data.nombre||''}"></div>
+      <div class="form-group"><div class="form-label">Categoría</div><select id="f-cat">
+        ${['Sublimación','DTF','Stickers','Cuadros','General'].map(c=>`<option ${data.categoria==c?'selected':''}>${c}</option>`).join('')}</select></div>
+      <div class="form-group"><div class="form-label">Proveedor</div><input id="f-prov" value="${data.proveedor||''}"></div>
+      <div class="form-group"><div class="form-label">Unidad de compra</div><input id="f-ucomp" placeholder="Pack 100 uds" value="${data.unidad_compra||''}"></div>
+      <div class="form-group"><div class="form-label">Uds por pack</div><input id="f-upack" type="number" class="no-sep" value="${data.uds_por_pack||1}"></div>
+      <div class="form-group"><div class="form-label">Precio del pack (₲)</div><input id="f-precio" type="number" value="${data.precio_pack||0}"></div>
+      <div class="form-group"><div class="form-label">Unidad de consumo</div><input id="f-ucon" placeholder="Hoja, Gramo, Unidad..." value="${data.unidad_consum||''}"></div>
+      <div class="form-group"><div class="form-label">Stock inicial</div><input id="f-stini" type="number" class="no-sep" value="${data.stock_inicial||0}"></div>
+      <div class="form-group"><div class="form-label">Stock mínimo</div><input id="f-stmin" type="number" class="no-sep" value="${data.stock_minimo||0}"></div>
+    </div>`, `<button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn-primary" onclick="saveInsumo(${data.id||'null'})">Guardar</button>`);
+}
+async function modalEditInsumo(id) { const insumos = await api('/api/insumos'); const ins = insumos.find(i => i.id === id); if (ins) modalNuevoInsumo(ins); }
+async function saveInsumo(id) {
+  const d = { nombre: v('f-nombre'), categoria: v('f-cat'), proveedor: v('f-prov'),
+    unidad_compra: v('f-ucomp'), uds_por_pack: v('f-upack'), precio_pack: numVal('f-precio'),
+    unidad_consum: v('f-ucon'), stock_inicial: v('f-stini'), stock_minimo: v('f-stmin') };
+  await api(id ? `/api/insumos/${id}` : '/api/insumos', id ? 'PUT' : 'POST', d);
+  toast('Insumo guardado ✓'); closeModal(); renderInsumos();
+}
+async function modalCompra(id, nombre) {
+  openModal(`Registrar compra — ${nombre}`, `<div class="form-grid">
+    <div class="form-group"><div class="form-label">Fecha</div><input id="c-fecha" type="date" value="${today()}"></div>
+    <div class="form-group"><div class="form-label">Cantidad en unidades de consumo</div><input id="c-cant" type="number" class="no-sep"></div>
+    <div class="form-group"><div class="form-label">Costo total (₲)</div><input id="c-costo" type="number"></div>
+    <div class="form-group"><div class="form-label">Proveedor</div><input id="c-prov"></div>
+    <div class="form-group"><div class="form-label">Notas</div><input id="c-notas"></div></div>`,
+    `<button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn-primary" onclick="saveCompra(${id})">Registrar</button>`);
+}
+async function saveCompra(insumo_id) {
+  await api('/api/compras', 'POST', { fecha: v('c-fecha'), insumo_id, cantidad_uds: v('c-cant'), costo_total: numVal('c-costo'), proveedor: v('c-prov'), notas: v('c-notas') });
+  toast('Compra registrada ✓'); closeModal(); renderInsumos();
+}
+
+// ── CONSUMOS ──────────────────────────────────────────────────────
+async function renderConsumos() {
+  const [consumos, insumos] = await Promise.all([api('/api/consumos'), api('/api/insumos')]);
+  const rows = consumos.map(c => `<tr><td>${c.fecha}</td>
+    <td><span class="badge ${TIPO_BADGE[c.tipo]||'badge-warn'}">${c.tipo}</span></td>
+    <td>${c.descripcion||'—'}</td><td style="color:var(--muted)">${c.pedido_ref||'—'}</td>
+    <td>${c.insumo_nombre||'—'}</td><td style="color:var(--muted)">${fmtN(c.cantidad_base)}</td>
+    <td><strong style="color:var(--cyan)">${fmtN(c.cantidad_real)}</strong> ${c.unidad_consum||''}</td>
+    <td style="color:${(c.cantidad_real-c.cantidad_base)>0?'var(--warn)':'var(--success)'}">${c.cantidad_real > c.cantidad_base ? '+' : ''}${fmtN(c.cantidad_real - c.cantidad_base)}</td>
+    <td>${c.costo_total ? fmt(c.costo_total) : '—'}</td>
+    <td><button class="btn-danger btn-sm" onclick="delConsumo(${c.id})">🗑</button></td></tr>`).join('');
+  document.getElementById('content').innerHTML = `
+    <div class="toolbar"><input class="toolbar-search" type="text" placeholder="🔍 Buscar..." oninput="filterTable(this,'con-table')">
+      <select id="fil-tipo" onchange="filterTable(document.querySelector('.toolbar-search'),'con-table')" style="width:auto">
+        <option value="">Todos</option>${['VENTA','PRUEBA','MERMA','CALIBRACIÓN','MUESTRA','OTRO'].map(t=>`<option>${t}</option>`).join('')}</select>
+      <button class="btn-primary" onclick="modalNuevoConsumo()">+ Registrar consumo</button></div>
+    <div class="card" style="padding:0;overflow:hidden"><table id="con-table"><thead><tr>
+      <th>Fecha</th><th>Tipo</th><th>Descripción</th><th>Pedido</th><th>Insumo</th><th>Base</th><th>Real</th><th>Desvío</th><th>Costo</th><th></th></tr></thead>
+      <tbody>${rows || emptyState('Registrá tu primer consumo')}</tbody></table></div>`;
+}
+async function modalNuevoConsumo() {
+  const [insumos] = await Promise.all([api('/api/insumos')]);
+  const insumoOpts = insumos.map(i => `<option value="${i.id}">${i.nombre} (${i.unidad_consum})</option>`).join('');
+  openModal('Registrar consumo', `<div class="form-grid cols2">
+    <div class="form-group"><div class="form-label">Fecha</div><input id="co-fecha" type="date" value="${today()}"></div>
+    <div class="form-group"><div class="form-label">Tipo</div><select id="co-tipo">${['VENTA','PRUEBA','MERMA','CALIBRACIÓN','MUESTRA','OTRO'].map(t=>`<option>${t}</option>`).join('')}</select></div>
+    <div class="form-group" style="grid-column:1/-1"><div class="form-label">Descripción</div><input id="co-desc"></div>
+    <div class="form-group"><div class="form-label"># Pedido</div><input id="co-pedido" placeholder="P-0001"></div>
+    <div class="form-group"><div class="form-label">Insumo</div><select id="co-insumo">${insumoOpts}</select></div>
+    <div class="form-group"><div class="form-label">Cant. base</div><input id="co-base" type="number" class="no-sep" value="1"></div>
+    <div class="form-group"><div class="form-label">Cant. real</div><input id="co-real" type="number" class="no-sep" value="1" style="border-color:var(--cyan)"></div>
+    <div class="form-group" style="grid-column:1/-1"><div class="form-label">Notas</div><input id="co-notas"></div></div>`,
+    `<button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn-primary" onclick="saveConsumo()">Registrar</button>`);
+}
+async function saveConsumo() {
+  await api('/api/consumos', 'POST', { fecha: v('co-fecha'), tipo: v('co-tipo'), descripcion: v('co-desc'),
+    pedido_ref: v('co-pedido'), insumo_id: v('co-insumo'), cantidad_base: v('co-base'), cantidad_real: v('co-real'), notas: v('co-notas') });
+  toast('Consumo registrado ✓'); closeModal(); renderConsumos();
+}
+async function delConsumo(id) { if (!confirm('¿Eliminar?')) return; await api(`/api/consumos/${id}`, 'DELETE'); toast('Eliminado'); renderConsumos(); }
+
+// ── PRODUCTOS ─────────────────────────────────────────────────────
+async function renderProductos() {
+  const [productos, insumos] = await Promise.all([api('/api/productos'), api('/api/insumos')]);
+  const costos = await Promise.all(productos.map(p => api(`/api/costo_producto/${p.id}`).catch(() => null)));
+  const cards = productos.map((p, idx) => {
+    const costo = costos[idx]; const catColor = CAT_COLORS[p.categoria] || 'muted';
+    const recetaRows = p.receta.map(r => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
+      <span style="color:var(--muted)">${r.insumo_nombre}</span><span>${fmtN(r.cantidad)} ${r.unidad_consum||'ud'} · ${fmt(r.costo_unit * r.cantidad)}</span></div>`).join('');
+    const preciosHTML = costo ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
+      <div style="background:rgba(170,255,0,.08);border:1px solid rgba(170,255,0,.2);border-radius:8px;padding:10px;text-align:center">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;margin-bottom:4px">Precio mínimo</div>
+        <div style="font-size:16px;font-weight:800;color:var(--lime)">${fmt(costo.precio_minimo)}</div></div>
+      <div style="background:rgba(255,0,200,.08);border:1px solid rgba(255,0,200,.2);border-radius:8px;padding:10px;text-align:center">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;margin-bottom:4px">Precio sugerido</div>
+        <div style="font-size:16px;font-weight:800;color:var(--magenta)">${fmt(costo.precio_sugerido)}</div></div></div>` : '';
+    return `<div class="card" style="position:relative">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px"><div>
+        <div style="font-weight:800;margin-bottom:4px">${p.nombre}</div><span class="badge badge-${catColor}">${p.categoria}</span></div>
+        <button class="btn-secondary btn-sm" onclick="modalCosto(${p.id},'${p.nombre.replace(/'/g,"\\'")}')">Desglose ₲</button></div>
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;margin-bottom:8px">Receta base</div>
+      ${recetaRows || '<div style="color:var(--muted);font-size:12px">Sin receta</div>'}${preciosHTML}
+      <button class="btn-secondary btn-sm" style="margin-top:12px;width:100%" onclick="modalEditReceta(${p.id},'${p.nombre.replace(/'/g,"\\'")}')">✏ Editar receta</button></div>`;
+  }).join('');
+  document.getElementById('content').innerHTML = `<div class="toolbar"><span style="color:var(--muted);font-size:13px">${productos.length} productos</span>
+    <button class="btn-primary" onclick="modalNuevoProducto()">+ Nuevo producto</button></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px">${cards || emptyState('Sin productos')}</div>`;
+}
+async function modalCosto(id, nombre) {
+  const costo = await api(`/api/costo_producto/${id}`);
+  openModal(`Desglose — ${nombre}`, `
+    <div class="cost-row"><span class="cost-label">Materiales</span><span>${fmt(costo.costo_materiales)}</span></div>
+    <div class="cost-row"><span class="cost-label">Mano de obra</span><span>${fmt(costo.mano_obra)}</span></div>
+    <div class="cost-row"><span class="cost-label">Gastos fijos</span><span>${fmt(costo.gasto_fijo)}</span></div>
+    <div class="cost-row"><span class="cost-label">Amortización</span><span>${fmt(costo.amortizacion)}</span></div>
+    <div class="cost-row total"><span>Costo total</span><span>${fmt(costo.costo_total)}</span></div><div class="divider"></div>
+    <div class="cost-row precio-min"><span>Precio mínimo</span><span>${fmt(costo.precio_minimo)}</span></div>
+    <div class="cost-row precio-sug"><span>💰 Precio sugerido</span><span>${fmt(costo.precio_sugerido)}</span></div>`,
+    `<button class="btn-primary" onclick="closeModal()">Cerrar</button>`);
+}
+async function modalEditReceta(pid, nombre) {
+  const [insumos, productos] = await Promise.all([api('/api/insumos'), api('/api/productos')]);
+  const prod = productos.find(p => p.id === pid); const recetaMap = {};
+  (prod?.receta || []).forEach(r => recetaMap[r.insumo_id] = r.cantidad);
+  const rows = insumos.map(i => `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+    <span style="flex:1;font-size:13px">${i.nombre}</span><span style="font-size:11px;color:var(--muted);min-width:50px">${i.unidad_consum}</span>
+    <input type="number" class="no-sep" value="${recetaMap[i.id]||0}" min="0" step="0.1" id="rec-${i.id}" style="width:80px"></div>`).join('');
+  openModal(`Editar receta — ${nombre}`, `<div style="max-height:50vh;overflow-y:auto">${rows}</div>`,
+    `<button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn-primary" onclick="saveReceta(${pid})">Guardar</button>`);
+}
+async function saveReceta(pid) {
+  const insumos = await api('/api/insumos');
+  const items = insumos.map(i => ({insumo_id: i.id, cantidad: parseFloat(document.getElementById(`rec-${i.id}`)?.value||0)})).filter(i => i.cantidad > 0);
+  await api(`/api/productos/${pid}/receta`, 'PUT', items); toast('Receta guardada ✓'); closeModal(); renderProductos();
+}
+async function modalNuevoProducto() {
+  openModal('Nuevo producto', `<div class="form-grid"><div class="form-group"><div class="form-label">Nombre</div><input id="np-nombre"></div>
+    <div class="form-group"><div class="form-label">Categoría</div><select id="np-cat">${['Sublimación','DTF','Stickers','Cuadros'].map(c=>`<option>${c}</option>`).join('')}</select></div></div>`,
+    `<button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn-primary" onclick="saveProducto()">Crear</button>`);
+}
+async function saveProducto() { await api('/api/productos', 'POST', { nombre: v('np-nombre'), categoria: v('np-cat'), receta: [] }); toast('Producto creado ✓'); closeModal(); renderProductos(); }
+
+// ── CLIENTES (E) ──────────────────────────────────────────────────
+async function renderClientes() {
+  const clientes = await api('/api/clientes');
+  const rows = clientes.map(c => `<tr>
+    <td><strong>${c.nombre} ${c.apellido||''}</strong></td>
+    <td><span class="badge badge-cyan">${c.tipo_documento||'CI'}</span> ${c.numero_documento||'—'}</td>
+    <td>${c.telefono||'—'}</td><td>${c.email||'—'}</td><td>${c.ciudad||'—'}</td>
+    <td><div style="display:flex;gap:6px">
+      <button class="btn-sm" style="background:var(--cyan);color:var(--bg1)" onclick='modalEditCliente(${c.id})'>✏️</button>
+      <button class="btn-danger btn-sm" onclick="delCliente(${c.id})">🗑</button></div></td></tr>`).join('');
+  document.getElementById('content').innerHTML = `
+    <div class="toolbar"><input class="toolbar-search" type="text" placeholder="🔍 Buscar cliente..." oninput="filterTable(this,'cli-table')">
+      <button class="btn-primary" onclick="modalNuevoCliente()">+ Nuevo cliente</button></div>
+    <div class="card" style="padding:0;overflow:hidden"><table id="cli-table"><thead><tr>
+      <th>Nombre</th><th>Documento</th><th>Teléfono</th><th>Email</th><th>Ciudad</th><th>Acciones</th></tr></thead>
+      <tbody>${rows || emptyState('Sin clientes registrados')}</tbody></table></div>`;
+}
+function clienteFormHTML(data={}) {
+  return `<div class="form-grid cols2">
+    <div class="form-group"><div class="form-label">Nombre</div><input id="cl-nombre" value="${data.nombre||''}"></div>
+    <div class="form-group"><div class="form-label">Apellido</div><input id="cl-apellido" value="${data.apellido||''}"></div>
+    <div class="form-group"><div class="form-label">Tipo de documento</div>
+      <select id="cl-tipodoc">${['CI','RUC','PASAPORTE'].map(t=>`<option ${data.tipo_documento==t?'selected':''}>${t}</option>`).join('')}</select></div>
+    <div class="form-group"><div class="form-label">Número de documento</div><input id="cl-numdoc" value="${data.numero_documento||''}"></div>
+    <div class="form-group"><div class="form-label">Teléfono</div><input id="cl-tel" value="${data.telefono||''}"></div>
+    <div class="form-group"><div class="form-label">Email</div><input id="cl-email" type="email" value="${data.email||''}"></div>
+    <div class="form-group"><div class="form-label">Dirección</div><input id="cl-dir" value="${data.direccion||''}"></div>
+    <div class="form-group"><div class="form-label">Ciudad</div><input id="cl-ciudad" value="${data.ciudad||''}"></div></div>`;
+}
+function getClienteData() {
+  return { nombre: v('cl-nombre'), apellido: v('cl-apellido'), tipo_documento: v('cl-tipodoc'),
+    numero_documento: v('cl-numdoc'), telefono: v('cl-tel'), email: v('cl-email'), direccion: v('cl-dir'), ciudad: v('cl-ciudad') };
+}
+function modalNuevoCliente(cb) {
+  openModal('Nuevo cliente', clienteFormHTML(),
+    `<button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn-primary" onclick="saveCliente(null, ${cb ? 'true' : 'false'})">Guardar</button>`);
+}
+async function modalEditCliente(id) {
+  const clientes = await api('/api/clientes'); const c = clientes.find(x => x.id === id);
+  if (!c) return;
+  openModal('Editar cliente', clienteFormHTML(c),
+    `<button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn-primary" onclick="saveCliente(${id})">Actualizar</button>`);
+}
+async function saveCliente(id, returnToOrder=false) {
+  const d = getClienteData();
+  if (!d.nombre) { toast('El nombre es obligatorio','error'); return; }
+  const r = await api(id ? `/api/clientes/${id}` : '/api/clientes', id ? 'PUT' : 'POST', d);
+  toast('Cliente guardado ✓'); closeModal();
+  if (returnToOrder && r.id) {
+    // Set client in order form
+    const inp = document.getElementById('pd-cliente');
+    if (inp) { inp.value = `${d.nombre} ${d.apellido||''}`; inp.dataset.clienteId = r.id; }
+    return;
+  }
+  if (currentPage === 'clientes') renderClientes();
+}
+async function delCliente(id) { if (!confirm('¿Eliminar cliente?')) return; await api(`/api/clientes/${id}`, 'DELETE'); toast('Eliminado'); renderClientes(); }
+
+// ── PEDIDOS (H) ───────────────────────────────────────────────────
+async function renderPedidos() {
+  const pedidos = await api('/api/pedidos');
+  const rows = pedidos.map(p => {
+    const items = p.items.map(i => i.producto_nombre || i.descripcion).filter(Boolean).join(', ');
+    const desc = p.notas || '—';
+    return `<tr>
+      <td><strong style="color:var(--cyan)">${p.numero}</strong></td><td>${p.fecha}</td>
+      <td>${p.cliente||'—'}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default" title="${items}">${items||'—'}</td>
+      <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default;font-size:12px;color:var(--muted)" title="${desc}">${desc}</td>
+      <td>${fmt(p.total)}</td>
+      <td>${p.cuotas > 1 ? p.cuotas+' cuotas' : '—'}</td>
+      <td style="color:${p.saldo>0?'var(--warn)':'var(--success)'}">${fmt(p.saldo)}</td>
+      <td style="color:var(--success)">${fmt(p.adelanto||0)}</td>
+      <td><span class="badge ${ESTADO_BADGE[p.estado]||'badge-warn'}">${p.estado}</span></td>
+      <td><div style="display:flex;gap:4px">
+        <button class="btn-secondary btn-sm" onclick="modalEstado(${p.id},'${p.estado}')">Estado</button>
+        ${p.cuotas > 1 ? `<button class="btn-secondary btn-sm" onclick="modalEntrega(${p.id})">💳</button>` : ''}
+      </div></td></tr>`;
+  }).join('');
+  document.getElementById('content').innerHTML = `
+    <div class="toolbar"><input class="toolbar-search" type="text" placeholder="🔍 Buscar..." oninput="filterTable(this,'ped-table')">
+      <button class="btn-primary" onclick="modalNuevoPedido()">+ Nuevo pedido</button></div>
+    <div class="card" style="padding:0;overflow:hidden"><table id="ped-table"><thead><tr>
+      <th>#</th><th>Fecha</th><th>Cliente</th><th>Productos</th><th>Descripción</th><th>Total</th><th>Cuotas</th><th>Saldo</th><th>Pagado</th><th>Estado</th><th></th></tr></thead>
+      <tbody>${rows || emptyState('Sin pedidos')}</tbody></table></div>`;
+}
+
+async function modalNuevoPedido() {
+  const [productos, mkt] = await Promise.all([api('/api/productos'), api('/api/marketing')]);
+  const prodOpts = productos.map(p=>`<option value="${p.id}" data-precio="${p.precio_sugerido||0}">${p.nombre}</option>`).join('');
+  const campanas = [...new Set(mkt.map(m => `${m.plataforma} - ${m.tipo_campana}`))];
+  const canalOpts = ['Orgánico', ...campanas].map(c => `<option>${c}</option>`).join('');
+  openModal('Nuevo pedido', `
+    <div class="form-grid cols2">
+      <div class="form-group"><div class="form-label">Fecha</div><input id="pd-fecha" type="date" value="${today()}"></div>
+      <div class="form-group"><div class="form-label">Canal (campaña)</div><select id="pd-canal">${canalOpts}</select></div>
+      <div class="form-group" style="position:relative"><div class="form-label">Cliente</div>
+        <input id="pd-cliente" autocomplete="off" oninput="buscarCliente(this.value)">
+        <div id="pd-cliente-list" class="autocomplete-list" style="display:none"></div></div>
+      <div class="form-group"><div class="form-label">Teléfono</div><input id="pd-tel"></div>
+      <div class="form-group"><div class="form-label">Fecha de entrega</div><input id="pd-entrega" type="date"></div>
+      <div class="form-group"><div class="form-label">Cuotas de pago</div><input id="pd-cuotas" type="number" class="no-sep" value="1" min="1"></div>
+      <div class="form-group" style="grid-column:1/-1"><div class="form-label">Modelo a seguir</div><input id="pd-modelo"></div>
+    </div>
+    <div class="divider"></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px;text-transform:uppercase">Ítems del pedido</div>
+    <div id="items-container"></div>
+    <button class="btn-secondary btn-sm" style="margin-top:8px" onclick="addItem()">+ Agregar ítem</button>
+    <div class="divider"></div>
+    <div class="form-grid cols2">
+      <div class="form-group"><div class="form-label">Total (₲)</div><input id="pd-total" type="number" oninput="calcSaldo()"></div>
+      <div class="form-group"><div class="form-label">Pagado (₲)</div><input id="pd-adelanto" type="number" value="0" oninput="calcSaldo()"></div>
+    </div>
+    <div id="saldo-preview" style="text-align:right;color:var(--warn);font-size:13px;margin-top:4px"></div>
+    <div class="form-group" style="margin-top:12px"><div class="form-label">Descripción</div><textarea id="pd-notas" rows="2" placeholder="Detalles del pedido..."></textarea></div>
+    <div style="display:none" id="pd-prods-json">${JSON.stringify(productos)}</div>`,
+    `<button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn-primary" onclick="savePedido()">Crear pedido</button>`);
+  addItem();
+}
+
+async function buscarCliente(q) {
+  const list = document.getElementById('pd-cliente-list');
+  if (q.length < 2) { list.style.display = 'none'; return; }
+  const clientes = await api(`/api/clientes/buscar?q=${encodeURIComponent(q)}`);
+  let html = clientes.map(c => `<div class="autocomplete-item" onclick="selectCliente(${c.id},'${(c.nombre+' '+(c.apellido||'')).replace(/'/g,"\\'")}','${(c.telefono||'').replace(/'/g,"\\'")}')">
+    <strong>${c.nombre} ${c.apellido||''}</strong> <span style="color:var(--muted);font-size:11px">${c.tipo_documento}: ${c.numero_documento||''}</span></div>`).join('');
+  if (clientes.length === 0) {
+    html = `<div class="autocomplete-item" style="color:var(--cyan)" onclick="crearClienteDesdeOrden()">+ Agregar nuevo cliente</div>`;
+  }
+  list.innerHTML = html;
+  list.style.display = 'block';
+}
+function selectCliente(id, nombre, tel) {
+  document.getElementById('pd-cliente').value = nombre; document.getElementById('pd-cliente').dataset.clienteId = id;
+  document.getElementById('pd-tel').value = tel;
+  document.getElementById('pd-cliente-list').style.display = 'none';
+}
+function crearClienteDesdeOrden() {
+  // Save current pedido form state
+  window._pedidoFormState = {
+    fecha: v('pd-fecha'), canal: v('pd-canal'), tel: v('pd-tel'),
+    entrega: v('pd-entrega'), cuotas: v('pd-cuotas'), modelo: v('pd-modelo'),
+    clienteText: v('pd-cliente'), notas: v('pd-notas'),
+    total: v('pd-total'), adelanto: v('pd-adelanto'),
+  };
+  // Pre-fill nombre with what was typed
+  const typed = v('pd-cliente');
+  openModal('Nuevo cliente', clienteFormHTML({nombre: typed}),
+    `<button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn-primary" onclick="saveClienteYVolver()">Guardar y volver al pedido</button>`);
+}
+async function saveClienteYVolver() {
+  const d = getClienteData();
+  if (!d.nombre) { toast('El nombre es obligatorio','error'); return; }
+  const r = await api('/api/clientes', 'POST', d);
+  toast('Cliente guardado ✓'); closeModal();
+  // Re-open pedido form and restore state
+  await modalNuevoPedido();
+  const st = window._pedidoFormState || {};
+  if (st.fecha) document.getElementById('pd-fecha').value = st.fecha;
+  if (st.canal) document.getElementById('pd-canal').value = st.canal;
+  if (st.entrega) document.getElementById('pd-entrega').value = st.entrega;
+  if (st.cuotas) document.getElementById('pd-cuotas').value = st.cuotas;
+  if (st.modelo) document.getElementById('pd-modelo').value = st.modelo;
+  if (st.notas) document.getElementById('pd-notas').value = st.notas;
+  // Set the new client
+  const inp = document.getElementById('pd-cliente');
+  if (inp) { inp.value = `${d.nombre} ${d.apellido||''}`.trim(); inp.dataset.clienteId = r.id; }
+  if (d.telefono) document.getElementById('pd-tel').value = d.telefono;
+}
+
+let itemCount = 0;
+function addItem() {
+  itemCount++;
+  const prods = JSON.parse(document.getElementById('pd-prods-json')?.textContent || '[]');
+  const opts = prods.map(p => `<option value="${p.id}" data-precio="${p.precio_sugerido||0}">${p.nombre}</option>`).join('');
+  const c = document.getElementById('items-container');
+  const div = document.createElement('div'); div.id = `item-${itemCount}`;
+  div.style.cssText = 'display:grid;grid-template-columns:2fr 60px 1fr 30px;gap:8px;margin-bottom:8px;align-items:center';
+  div.innerHTML = `<select class="item-prod" onchange="autocompletarPrecio(this)"><option value="" data-precio="0">— Producto —</option>${opts}</select>
+    <input type="number" class="item-cant no-sep" value="1" min="1" oninput="calcTotal()">
+    <input type="number" class="item-precio" placeholder="Precio unit. ₲" oninput="calcTotal()">
+    <button class="btn-danger btn-sm" onclick="this.parentElement.remove();calcTotal()">✕</button>`;
+  c.appendChild(div);
+}
+function autocompletarPrecio(sel) {
+  const precio = sel.options[sel.selectedIndex]?.dataset?.precio || 0;
+  const row = sel.closest('div[id^="item-"]');
+  const pi = row.querySelector('.item-precio');
+  if (pi && precio > 0) { pi.value = precio; pi.style.borderColor = 'var(--lime)'; setTimeout(() => pi.style.borderColor = '', 2000); }
+  calcTotal();
+}
+function calcTotal() {
+  let total = 0;
+  document.querySelectorAll('#items-container > div[id^="item-"]').forEach(row => {
+    const cant = parseFloat(row.querySelector('.item-cant')?.value || 0);
+    const precioRaw = row.querySelector('.item-precio')?.value || '0';
+    const precio = parseFloat(precioRaw.replace(/\./g, '').replace(/,/g, '')) || parseFloat(precioRaw) || 0;
+    total += cant * precio;
+  });
+  const input = document.getElementById('pd-total');
+  if (input) { input.value = Math.round(total); calcSaldo(); }
+}
+function calcSaldo() {
+  const t = numVal('pd-total'), a = numVal('pd-adelanto');
+  const s = document.getElementById('saldo-preview');
+  if (s) s.textContent = `Saldo pendiente: ${fmt(t-a)}`;
+}
+async function savePedido() {
+  const items = [...document.querySelectorAll('#items-container > div')].map(div => ({
+    producto_id: div.querySelector('.item-prod')?.value || null,
+    descripcion: div.querySelector('.item-prod')?.options[div.querySelector('.item-prod').selectedIndex]?.text || '',
+    cantidad: parseFloat(div.querySelector('.item-cant')?.value||1),
+    precio_unit: parseFloat((div.querySelector('.item-precio')?.value||'0').replace(/\./g,'').replace(/,/g,'')) || parseFloat(div.querySelector('.item-precio')?.value||0),
+  })).filter(i => i.precio_unit > 0);
+  const r = await api('/api/pedidos', 'POST', {
+    fecha: v('pd-fecha'), canal: v('pd-canal'),
+    cliente_id: document.getElementById('pd-cliente')?.dataset?.clienteId || null,
+    cliente: v('pd-cliente'), telefono: v('pd-tel'),
+    fecha_entrega: v('pd-entrega'), estado: 'Pendiente',
+    total: numVal('pd-total'), adelanto: numVal('pd-adelanto'),
+    cuotas: parseInt(v('pd-cuotas')) || 1,
+    modelo_seguir: v('pd-modelo'), notas: v('pd-notas'), items,
+  });
+  toast(`Pedido ${r.numero} creado ✓`); closeModal(); renderPedidos();
+}
+
+async function modalEstado(id, estadoActual) {
+  const estados = ['Pendiente','En Producción','Listo','Entregado','Cancelado','Reingreso'];
+  const historial = await api(`/api/pedidos/${id}/historial`);
+  const histHTML = historial.map(h => `<div style="display:flex;gap:8px;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)">
+    <span style="color:var(--muted)">${h.fecha_hora}</span><span class="badge ${ESTADO_BADGE[h.estado]||'badge-warn'}">${h.estado}</span></div>`).join('');
+  openModal('Cambiar estado', `
+    <select id="est-nuevo" onchange="onEstadoChange(${id})">${estados.map(e=>`<option ${e===estadoActual?'selected':''}>${e}</option>`).join('')}</select>
+    <div id="factura-section" style="display:none;margin-top:16px"></div>
+    <div id="reingreso-section" style="display:none;margin-top:16px"></div>
+    ${histHTML ? `<div class="divider"></div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;margin-bottom:8px">Historial de estados</div>${histHTML}` : ''}`,
+    `<button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn-primary" onclick="saveEstado(${id})">Guardar</button>`);
+}
+
+async function onEstadoChange(pedidoId) {
+  const estado = v('est-nuevo');
+  const facSec = document.getElementById('factura-section');
+  const reSec = document.getElementById('reingreso-section');
+  facSec.style.display = 'none'; reSec.style.display = 'none';
+  if (estado === 'Listo') {
+    const pedidos = await api('/api/pedidos');
+    const p = pedidos.find(x => x.id === pedidoId);
+    const cli = p?.cliente_info || {};
+    facSec.innerHTML = `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:12px">
+      <input type="checkbox" id="fac-check" onchange="document.getElementById('fac-fields').style.display=this.checked?'block':'none'"> <span>Solicita Factura</span></label>
+      <div id="fac-fields" style="display:none"><div class="section-title" style="font-size:14px">Datos de Facturación</div>
+        <div class="form-grid cols2">
+          <div class="form-group"><div class="form-label">Razón Social</div><input id="fac-razon" value="${p?.cliente||cli.nombre||''}"></div>
+          <div class="form-group"><div class="form-label">RUC</div><input id="fac-ruc" value="${cli.numero_documento||''}"></div>
+          <div class="form-group"><div class="form-label">Email</div><input id="fac-email" value="${cli.email||''}"></div>
+          <div class="form-group"><div class="form-label">Teléfono</div><input id="fac-tel" value="${cli.telefono||p?.telefono||''}"></div>
+          <div class="form-group" style="grid-column:1/-1"><div class="form-label">Dirección</div><input id="fac-dir" value="${cli.direccion||''}"></div>
+        </div></div>`;
+    facSec.style.display = 'block';
+  }
+  if (estado === 'Reingreso') {
+    const pedidos = await api('/api/pedidos');
+    const p = pedidos.find(x => x.id === pedidoId);
+    // Build product options from pedido items with their prices
+    const itemOpts = (p?.items || []).map(i => 
+      `<option value="${i.producto_id}" data-precio="${i.precio_unit}" data-desc="${i.producto_nombre||i.descripcion||''}">${i.producto_nombre||i.descripcion||'Producto'} — ${fmt(i.precio_unit)}</option>`
+    ).join('');
+    reSec.innerHTML = `<div class="section-title" style="font-size:14px">🔄 Datos de Reingreso</div>
+      <div class="form-grid cols2">
+        <div class="form-group"><div class="form-label">Producto del pedido</div><select id="re-prod" onchange="onReingresoProdChange()">${itemOpts}</select></div>
+        <div class="form-group"><div class="form-label">Cantidad</div><input id="re-cant" type="number" class="no-sep" value="1"></div>
+        <div class="form-group"><div class="form-label">Valor unitario (₲)</div><input id="re-valor" type="number" readonly style="color:var(--cyan)"></div>
+        <div class="form-group" style="grid-column:1/-1"><div class="form-label">Motivo de devolución</div><input id="re-motivo" placeholder="Ej: Defecto de impresión, talle incorrecto..."></div>
+      </div>`;
+    reSec.style.display = 'block';
+    // Auto-fill first product price
+    setTimeout(() => onReingresoProdChange(), 50);
+  }
+}
+
+function onReingresoProdChange() {
+  const sel = document.getElementById('re-prod');
+  if (!sel) return;
+  const opt = sel.options[sel.selectedIndex];
+  const precio = opt?.dataset?.precio || 0;
+  const valorInput = document.getElementById('re-valor');
+  if (valorInput) valorInput.value = precio;
+}
+
+async function saveEstado(id) {
+  const pedidos = await api('/api/pedidos'); const p = pedidos.find(x => x.id === id);
+  if (!p) return;
+  const nuevoEstado = v('est-nuevo');
+  const updateData = {...p, estado: nuevoEstado};
+  // Factura
+  if (nuevoEstado === 'Listo' && document.getElementById('fac-check')?.checked) {
+    updateData.solicita_factura = 1;
+    updateData.factura_razon = v('fac-razon'); updateData.factura_ruc = v('fac-ruc');
+    updateData.factura_email = v('fac-email'); updateData.factura_tel = v('fac-tel');
+    updateData.factura_dir = v('fac-dir');
+  }
+  await api(`/api/pedidos/${id}`, 'PUT', updateData);
+  // Reingreso
+  if (nuevoEstado === 'Reingreso') {
+    const reSel = document.getElementById('re-prod');
+    const reDesc = reSel?.options[reSel.selectedIndex]?.dataset?.desc || '';
+    await api(`/api/pedidos/${id}/reingreso`, 'POST', {
+      producto_id: v('re-prod'), descripcion: reDesc,
+      cantidad: v('re-cant'), valor_unit: numVal('re-valor'), motivo: v('re-motivo')
+    });
+  }
+  // Auto-register consumos on Entregado
+  if (nuevoEstado === 'Entregado') {
+    const check = await api(`/api/pedidos/${id}/consumos_registrados`);
+    if (!check.registrados && p.items?.length > 0) {
+      const todosProductos = await api('/api/productos');
+      for (const item of p.items) {
+        if (!item.producto_id) continue;
+        const prod = todosProductos.find(x => x.id === item.producto_id);
+        if (!prod) continue;
+        for (const r of prod.receta) {
+          await api('/api/consumos', 'POST', { fecha: today(), tipo: 'VENTA',
+            descripcion: `${prod.nombre} × ${item.cantidad}`, pedido_ref: p.numero,
+            insumo_id: r.insumo_id, cantidad_base: r.cantidad * item.cantidad,
+            cantidad_real: r.cantidad * item.cantidad, notas: 'Auto-registrado' });
+        }
+      }
+    }
+  }
+  toast('Estado actualizado ✓'); closeModal(); renderPedidos();
+}
+
+// Modificar Entrega (cuotas view)
+async function modalEntrega(pedidoId) {
+  const cuotas = await api(`/api/pedidos/${pedidoId}/cuotas`);
+  const pedidos = await api('/api/pedidos'); const p = pedidos.find(x => x.id === pedidoId);
+  const total = p?.total || 0;
+  const totalPagado = cuotas.reduce((s,c) => s + (c.monto_pagado||0), 0);
+  window._cuotasTotal = total;
+  const cuotasHTML = cuotas.map(c => `<div style="display:grid;grid-template-columns:40px 1fr 1fr 80px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)" data-cuota-id="${c.id}" data-monto-esperado="${c.monto_esperado}">
+    <span style="font-weight:700;color:var(--cyan)">#${c.numero_cuota}</span>
+    <div><div style="font-size:11px;color:var(--muted)">Esperado</div><div>${fmt(c.monto_esperado)}</div></div>
+    <div><div style="font-size:11px;color:var(--muted)">Pagado</div><input type="text" class="cuota-pagado" value="${c.monto_pagado ? Math.round(c.monto_pagado).toLocaleString('es-PY') : '0'}" data-id="${c.id}" style="font-size:13px" oninput="recalcCuotasTotals()"></div>
+    <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
+      <input type="checkbox" class="cuota-check" data-id="${c.id}" ${c.pagada?'checked':''} onchange="onCuotaCheck(this)"> Pagada</label></div>`).join('');
+  openModal(`Cuotas — ${p?.numero || ''}`, `
+    <div style="display:flex;justify-content:space-between;margin-bottom:16px" id="cuotas-summary">
+      <div><span style="color:var(--muted)">Total:</span> <strong>${fmt(total)}</strong></div>
+      <div><span style="color:var(--muted)">Pagado:</span> <strong id="cuotas-pagado-total" style="color:var(--success)">${fmt(totalPagado)}</strong></div>
+      <div><span style="color:var(--muted)">Saldo:</span> <strong id="cuotas-saldo-total" style="color:var(--warn)">${fmt(total - totalPagado)}</strong></div>
+    </div>${cuotasHTML}`,
+    `<button class="btn-secondary" onclick="closeModal()">Cerrar</button>
+     <button class="btn-primary" onclick="saveCuotas(${pedidoId})">Guardar pagos</button>`);
+}
+function onCuotaCheck(checkbox) {
+  const row = checkbox.closest('[data-cuota-id]');
+  const pagadoInput = row.querySelector('.cuota-pagado');
+  if (checkbox.checked) {
+    // Auto-fill with expected amount
+    const esperado = parseFloat(row.dataset.montoEsperado) || 0;
+    pagadoInput.value = Math.round(esperado).toLocaleString('es-PY');
+  } else {
+    pagadoInput.value = '0';
+  }
+  recalcCuotasTotals();
+}
+function parseCuotaValue(str) {
+  if (!str) return 0;
+  // Remove thousand separators (dots) and handle commas
+  return parseFloat(str.replace(/\./g, '').replace(/,/g, '')) || 0;
+}
+function recalcCuotasTotals() {
+  let totalPagado = 0;
+  document.querySelectorAll('[data-cuota-id]').forEach(row => {
+    totalPagado += parseCuotaValue(row.querySelector('.cuota-pagado')?.value);
+  });
+  const total = window._cuotasTotal || 0;
+  const pagadoEl = document.getElementById('cuotas-pagado-total');
+  const saldoEl = document.getElementById('cuotas-saldo-total');
+  if (pagadoEl) pagadoEl.textContent = fmt(totalPagado);
+  if (saldoEl) saldoEl.textContent = fmt(total - totalPagado);
+}
+async function saveCuotas(pedidoId) {
+  const data = [...document.querySelectorAll('[data-cuota-id]')].map(div => ({
+    id: parseInt(div.dataset.cuotaId),
+    monto_pagado: parseCuotaValue(div.querySelector('.cuota-pagado')?.value),
+    pagada: div.querySelector('.cuota-check')?.checked ? 1 : 0,
+    fecha_pago: div.querySelector('.cuota-check')?.checked ? today() : ''
+  }));
+  await api(`/api/pedidos/${pedidoId}/cuotas`, 'PUT', data);
+  toast('Pagos actualizados ✓'); closeModal(); renderPedidos();
+}
+
+// ── GASTOS (G: tipo_recurrencia + edit) ───────────────────────────
+let _gastosData = [];
+async function renderGastos() {
+  _gastosData = await api('/api/gastos');
+  const hoy = new Date(); const mesAct = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+  const years = [...new Set(_gastosData.map(g => g.fecha?.slice(0,4)))].sort().reverse();
+  const yearOpts = years.map(y => `<option value="${y}" ${y==hoy.getFullYear()?'selected':''}>${y}</option>`).join('');
+  const RECUR_BADGE = {'Mensual':'badge-cyan','Anual':'badge-magenta','Único':'badge-warn'};
+  const rows = _gastosData.map(g => `<tr><td>${g.fecha}</td>
+    <td><span class="badge badge-cyan">${g.categoria}</span></td><td>${g.descripcion||'—'}</td>
+    <td style="color:var(--muted)">${g.proveedor||'—'}</td><td style="color:var(--muted)">${g.forma_pago||'—'}</td>
+    <td><span class="badge ${RECUR_BADGE[g.tipo_recurrencia]||'badge-warn'}">${g.tipo_recurrencia||'Único'}</span></td>
+    <td><strong style="color:var(--danger)">${fmt(g.monto)}</strong></td>
+    <td><div style="display:flex;gap:4px">
+      <button class="btn-sm" style="background:var(--cyan);color:#000" onclick="modalEditGasto(${g.id})">✏️</button>
+      <button class="btn-danger btn-sm" onclick="delGasto(${g.id})">🗑</button></div></td></tr>`).join('');
+  document.getElementById('content').innerHTML = `
+    <div class="toolbar"><input type="text" placeholder="🔍 Buscar..." style="width:160px" oninput="filterTable(this,'gas-table')">
+      <button class="btn-primary" onclick="modalNuevoGasto()">+ Registrar gasto</button></div>
+    <div class="card" style="padding:0;overflow:hidden"><table id="gas-table"><thead><tr>
+      <th>Fecha</th><th>Categoría</th><th>Descripción</th><th>Proveedor</th><th>Forma pago</th><th>Recurrencia</th><th>Monto</th><th>Acciones</th></tr></thead>
+      <tbody>${rows || emptyState('Sin gastos')}</tbody></table></div>`;
+}
+function gastoFormHTML(data={}) {
+  const cats = ['Insumos Sublimación','Insumos DTF','Insumos Stickers','Insumos Cuadros','Mano de Obra','Servicios (luz/internet)','Marketing/Publicidad','Mantenimiento Equipos','Packaging/Envíos','Software/Diseño','Otros'];
+  return `<div class="form-grid cols2">
+    <div class="form-group"><div class="form-label">Fecha</div><input id="g-fecha" type="date" value="${data.fecha||today()}"></div>
+    <div class="form-group"><div class="form-label">Categoría</div><select id="g-cat">${cats.map(c=>`<option ${data.categoria==c?'selected':''}>${c}</option>`).join('')}</select></div>
+    <div class="form-group" style="grid-column:1/-1"><div class="form-label">Descripción</div><input id="g-desc" value="${data.descripcion||''}"></div>
+    <div class="form-group"><div class="form-label">Proveedor</div><input id="g-prov" value="${data.proveedor||''}"></div>
+    <div class="form-group"><div class="form-label">Comprobante #</div><input id="g-comp" value="${data.comprobante||''}"></div>
+    <div class="form-group"><div class="form-label">Forma de pago</div><select id="g-pago">${['Efectivo','Transferencia','Tarjeta','Débito Auto'].map(f=>`<option ${data.forma_pago==f?'selected':''}>${f}</option>`).join('')}</select></div>
+    <div class="form-group"><div class="form-label">Monto (₲)</div><input id="g-monto" type="number" value="${data.monto||0}"></div>
+    <div class="form-group"><div class="form-label">Recurrencia</div><select id="g-recur">${['Único','Mensual','Anual'].map(t=>`<option ${data.tipo_recurrencia==t?'selected':''}>${t}</option>`).join('')}</select></div>
+    <div class="form-group" style="grid-column:1/-1"><div class="form-label">Notas</div><textarea id="g-notas" rows="2">${data.notas||''}</textarea></div></div>`;
+}
+function getGastoData() {
+  return { fecha: v('g-fecha'), categoria: v('g-cat'), descripcion: v('g-desc'), proveedor: v('g-prov'),
+    comprobante: v('g-comp'), forma_pago: v('g-pago'), monto: numVal('g-monto'), tipo_recurrencia: v('g-recur'), notas: v('g-notas') };
+}
+function modalNuevoGasto() {
+  openModal('Registrar gasto', gastoFormHTML(), `<button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+    <button class="btn-primary" onclick="saveGasto()">Guardar</button>`);
+}
+async function modalEditGasto(id) {
+  const g = _gastosData.find(x => x.id === id); if (!g) return;
+  openModal('Editar gasto', gastoFormHTML(g), `<button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+    <button class="btn-primary" onclick="saveGasto(${id})">Actualizar</button>`);
+}
+async function saveGasto(id) {
+  await api(id ? `/api/gastos/${id}` : '/api/gastos', id ? 'PUT' : 'POST', getGastoData());
+  toast('Gasto guardado ✓'); closeModal(); renderGastos();
+}
+async function delGasto(id) { if (!confirm('¿Eliminar?')) return; await api(`/api/gastos/${id}`, 'DELETE'); toast('Eliminado'); renderGastos(); }
+
+// ── MARKETING (D: edit/delete) ────────────────────────────────────
+async function renderMarketing() {
+  const data = await api('/api/marketing');
+  const totalGasto = data.reduce((s,m)=>s+(m.gasto_real||0),0);
+  const totalVenta = data.reduce((s,m)=>s+(m.venta_generada||0),0);
+  const totalPedidos = data.reduce((s,m)=>s+(m.pedidos_generados||0),0);
+  const roiTotal = totalGasto > 0 ? ((totalVenta-totalGasto)/totalGasto*100).toFixed(1) : '—';
+  const rows = data.map(m => {
+    const roi = m.gasto_real > 0 ? ((m.venta_generada - m.gasto_real) / m.gasto_real * 100).toFixed(1) : 'N/A';
+    const roiColor = parseFloat(roi) > 0 ? 'var(--success)' : (roi === 'N/A' ? 'var(--muted)' : 'var(--danger)');
+    return `<tr><td>${m.mes}</td><td>${m.plataforma}</td><td style="font-size:12px;color:var(--muted)">${m.tipo_campana||'—'}</td>
+      <td>${fmt(m.presupuesto)}</td><td>${fmt(m.gasto_real)}</td><td>${m.alcance?.toLocaleString()||'—'}</td>
+      <td>${m.interacciones?.toLocaleString()||'—'}</td><td>${m.pedidos_generados||'—'}</td><td>${fmt(m.venta_generada)}</td>
+      <td style="color:${roiColor};font-weight:700">${roi !== 'N/A' ? roi+'%' : roi}</td>
+      <td><div style="display:flex;gap:4px">
+        <button class="btn-sm" style="background:var(--cyan);color:#000" onclick="modalEditMkt(${m.id})">✏️</button>
+        <button class="btn-danger btn-sm" onclick="delMkt(${m.id})">🗑</button></div></td></tr>`;
+  }).join('');
+  document.getElementById('content').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+      <div class="card" style="padding:14px"><div class="kpi-label">Gasto total</div><div style="font-size:18px;font-weight:800;color:var(--magenta)">${fmt(totalGasto)}</div></div>
+      <div class="card" style="padding:14px"><div class="kpi-label">Venta generada</div><div style="font-size:18px;font-weight:800;color:var(--cyan)">${fmt(totalVenta)}</div></div>
+      <div class="card" style="padding:14px"><div class="kpi-label">Pedidos</div><div style="font-size:18px;font-weight:800;color:var(--lime)">${totalPedidos}</div></div>
+      <div class="card" style="padding:14px"><div class="kpi-label">ROI total</div><div style="font-size:18px;font-weight:800;color:${parseFloat(roiTotal)>0?'var(--success)':'var(--danger)'}">${roiTotal}${roiTotal!=='—'?'%':''}</div></div>
+    </div>
+    <div class="toolbar"><button class="btn-primary" onclick="modalNuevoMkt()">+ Nueva campaña</button></div>
+    <div class="card" style="padding:0;overflow:hidden"><table><thead><tr>
+      <th>Mes</th><th>Plataforma</th><th>Campaña</th><th>Presupuesto</th><th>Gasto real</th><th>Alcance</th>
+      <th>Interacciones</th><th>Pedidos</th><th>Venta</th><th>ROI</th><th>Acciones</th></tr></thead>
+      <tbody>${rows || emptyState('Sin campañas')}</tbody></table></div>`;
+}
+function mktFormHTML(data={}) {
+  const hoy = new Date(); const mes = data.mes || `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+  return `<div class="form-grid cols2">
+    <div class="form-group"><div class="form-label">Mes</div><input id="mk-mes" type="month" value="${mes}"></div>
+    <div class="form-group"><div class="form-label">Plataforma</div><select id="mk-plat">
+      ${['Instagram','Meta Ads','WhatsApp','TikTok','Facebook','Otro'].map(p=>`<option ${data.plataforma==p?'selected':''}>${p}</option>`).join('')}</select></div>
+    <div class="form-group" style="grid-column:1/-1"><div class="form-label">Tipo de campaña</div><input id="mk-tipo" value="${data.tipo_campana||''}"></div>
+    <div class="form-group"><div class="form-label">Presupuesto (₲)</div><input id="mk-pres" type="number" value="${data.presupuesto||0}"></div>
+    <div class="form-group"><div class="form-label">Gasto real (₲)</div><input id="mk-gasto" type="number" value="${data.gasto_real||0}"></div>
+    <div class="form-group"><div class="form-label">Alcance</div><input id="mk-alc" type="number" class="no-sep" value="${data.alcance||0}"></div>
+    <div class="form-group"><div class="form-label">Interacciones</div><input id="mk-int" type="number" class="no-sep" value="${data.interacciones||0}"></div>
+    <div class="form-group"><div class="form-label">Pedidos generados</div><input id="mk-ped" type="number" class="no-sep" value="${data.pedidos_generados||0}"></div>
+    <div class="form-group"><div class="form-label">Venta generada (₲)</div><input id="mk-ven" type="number" value="${data.venta_generada||0}"></div></div>`;
+}
+function getMktData() {
+  return { mes: v('mk-mes'), plataforma: v('mk-plat'), tipo_campana: v('mk-tipo'),
+    presupuesto: numVal('mk-pres'), gasto_real: numVal('mk-gasto'),
+    alcance: v('mk-alc'), interacciones: v('mk-int'), pedidos_generados: v('mk-ped'), venta_generada: numVal('mk-ven') };
+}
+function modalNuevoMkt() { openModal('Nueva campaña', mktFormHTML(), `<button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+  <button class="btn-primary" onclick="saveMkt()">Guardar</button>`); }
+async function modalEditMkt(id) {
+  const data = await api('/api/marketing'); const m = data.find(x => x.id === id); if (!m) return;
+  openModal('Editar campaña', mktFormHTML(m), `<button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+    <button class="btn-primary" onclick="saveMkt(${id})">Actualizar</button>`);
+}
+async function saveMkt(id) {
+  await api(id ? `/api/marketing/${id}` : '/api/marketing', id ? 'PUT' : 'POST', getMktData());
+  toast('Campaña guardada ✓'); closeModal(); renderMarketing();
+}
+async function delMkt(id) { if (!confirm('¿Eliminar campaña?')) return; await api(`/api/marketing/${id}`, 'DELETE'); toast('Eliminada'); renderMarketing(); }
+
+// ── STOCK REINGRESO ───────────────────────────────────────────────
+async function renderStock() {
+  const items = await api('/api/stock_reingreso');
+  const disponibles = items.filter(i => i.estado === 'Disponible');
+  const vendidos = items.filter(i => i.estado === 'Vendido');
+  const baja = items.filter(i => i.estado === 'Baja');
+  const totalValor = disponibles.reduce((s,i) => s + (i.cantidad * i.valor_unit), 0);
+  const totalRevendido = vendidos.reduce((s,i) => s + (i.cantidad * i.valor_unit), 0);
+  const totalPerdida = baja.reduce((s,i) => s + (i.cantidad * i.valor_unit), 0);
+  const rows = items.map(i => {
+    const prodName = i.producto_nombre || '—';
+    const desc = i.descripcion || '—';
+    const origen = i.pedido_numero ? `<span class="badge badge-warn">${i.pedido_numero}</span>` : `<span class="badge badge-lime">Producción</span>`;
+    let acciones = '';
+    if (i.estado === 'Disponible') {
+      acciones = `<div style="display:flex;gap:4px">
+        <button class="btn-primary btn-sm" onclick="modalSalidaStock(${i.id})">📤 Salida</button>
+        <button class="btn-danger btn-sm" onclick="darBajaStock(${i.id},'${(prodName).replace(/'/g,"\\'")}')">✕ Baja</button></div>`;
+    }
+    const estadoBadge = i.estado==='Disponible' ? 'badge-ok' : i.estado==='Vendido' ? 'badge-cyan' : 'badge-danger';
+    return `<tr style="${i.estado!=='Disponible'?'opacity:0.5':''}">
+      <td>${i.fecha}</td><td>${origen}</td>
+      <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default" title="${prodName}"><strong>${prodName}</strong></td>
+      <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default;font-size:12px;color:var(--muted)" title="${desc}">${desc}</td>
+      <td>${i.cantidad}</td><td>${fmt(i.valor_unit)}</td><td>${fmt(i.cantidad * i.valor_unit)}</td>
+      <td>${i.motivo||'—'}</td>
+      <td><span class="badge ${estadoBadge}">${i.estado}</span></td>
+      <td>${acciones}</td></tr>`;
+  }).join('');
+  document.getElementById('content').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+      <div class="card" style="padding:14px">
+        <div class="kpi-label">Disponibles</div>
+        <div style="font-size:22px;font-weight:800;color:var(--success)">${disponibles.length}</div></div>
+      <div class="card" style="padding:14px">
+        <div class="kpi-label">Valor en stock</div>
+        <div style="font-size:18px;font-weight:800;color:var(--orange)">${fmt(totalValor)}</div></div>
+      <div class="card" style="padding:14px">
+        <div class="kpi-label">Total revendido</div>
+        <div style="font-size:18px;font-weight:800;color:var(--cyan)">${fmt(totalRevendido)}</div></div>
+      <div class="card" style="padding:14px">
+        <div class="kpi-label">Pérdida (bajas)</div>
+        <div style="font-size:18px;font-weight:800;color:var(--danger)">${fmt(totalPerdida)}</div></div>
+    </div>
+    <div class="toolbar"><button class="btn-primary" onclick="modalNuevoStock()">+ Nuevo producto</button></div>
+    <div class="card" style="padding:0;overflow:hidden"><table><thead><tr>
+      <th>Fecha</th><th>Origen</th><th>Producto</th><th>Descripción</th><th>Cant.</th><th>Valor unit.</th><th>Total</th><th>Motivo</th><th>Estado</th><th>Acciones</th></tr></thead>
+      <tbody>${rows || emptyState('Sin productos en stock')}</tbody></table></div>`;
+}
+
+async function darBajaStock(id, nombre) {
+  if (!confirm(`¿Dar de BAJA "${nombre}"?\n\nEsto registra el producto como pérdida y no se puede revertir.`)) return;
+  await api(`/api/stock_reingreso/${id}`, 'PUT', { estado: 'Baja' });
+  toast('Producto dado de baja ✓'); renderStock(); updateAlertBadge();
+}
+
+async function modalNuevoStock() {
+  const productos = await api('/api/productos');
+  const prodOpts = productos.map(p => `<option value="${p.id}" data-precio="${p.precio_sugerido||0}">${p.nombre}</option>`).join('');
+  openModal('Nuevo producto para stock', `
+    <div class="form-grid cols2">
+      <div class="form-group" style="grid-column:1/-1"><div class="form-label">Producto</div>
+        <select id="stk-prod" onchange="onStkProdChange()">${prodOpts}</select></div>
+      <div class="form-group"><div class="form-label">Cantidad</div><input id="stk-cant" type="number" class="no-sep" value="1"></div>
+      <div class="form-group"><div class="form-label">Valor unitario (₲)</div><input id="stk-valor" type="number"></div>
+      <div class="form-group" style="grid-column:1/-1"><div class="form-label">Descripción / Notas</div>
+        <input id="stk-desc" placeholder="Ej: Remera diseño exclusivo para exhibición"></div>
+    </div>`,
+    `<button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn-primary" onclick="saveNuevoStock()">Agregar a stock</button>`);
+  setTimeout(() => onStkProdChange(), 50);
+}
+function onStkProdChange() {
+  const sel = document.getElementById('stk-prod');
+  if (!sel) return;
+  const precio = sel.options[sel.selectedIndex]?.dataset?.precio || 0;
+  document.getElementById('stk-valor').value = precio;
+}
+async function saveNuevoStock() {
+  const sel = document.getElementById('stk-prod');
+  const prodName = sel?.options[sel.selectedIndex]?.text || '';
+  const desc = v('stk-desc') || prodName;
+  await api('/api/stock_reingreso', 'POST', {
+    producto_id: v('stk-prod'), descripcion: desc,
+    cantidad: v('stk-cant'), valor_unit: numVal('stk-valor'),
+    motivo: 'Producción para stock'
+  });
+  toast('Producto agregado al stock ✓'); closeModal(); renderStock(); updateAlertBadge();
+}
+
+async function modalSalidaStock(stockId) {
+  const items = await api('/api/stock_reingreso');
+  const item = items.find(i => i.id === stockId);
+  if (!item) return;
+  openModal('📤 Dar salida de stock', `
+    <div class="card" style="margin-bottom:16px;background:var(--bg3)">
+      <div style="font-size:13px;color:var(--muted);margin-bottom:4px">Producto</div>
+      <div style="font-size:16px;font-weight:700">${item.descripcion||'Producto'}</div>
+      <div style="font-size:13px;color:var(--muted);margin-top:8px">Valor original: <strong style="color:var(--cyan)">${fmt(item.valor_unit)}</strong></div>
+    </div>
+    <div class="form-grid cols2">
+      <div class="form-group" style="position:relative"><div class="form-label">Cliente</div>
+        <input id="sal-cliente" autocomplete="off" oninput="buscarClienteSalida(this.value)">
+        <div id="sal-cliente-list" class="autocomplete-list" style="display:none"></div></div>
+      <div class="form-group"><div class="form-label">Teléfono</div><input id="sal-tel"></div>
+      <div class="form-group"><div class="form-label">Monto de venta (₲)</div><input id="sal-monto" type="number" value="${item.valor_unit * item.cantidad}"></div>
+    </div>`,
+    `<button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn-primary" onclick="confirmarSalida(${stockId})">Confirmar venta</button>`);
+}
+
+async function buscarClienteSalida(q) {
+  const list = document.getElementById('sal-cliente-list');
+  if (q.length < 2) { list.style.display = 'none'; return; }
+  const clientes = await api(`/api/clientes/buscar?q=${encodeURIComponent(q)}`);
+  let html = clientes.map(c => `<div class="autocomplete-item" onclick="selectClienteSalida(${c.id},'${(c.nombre+' '+(c.apellido||'')).replace(/'/g,"\\'")}','${(c.telefono||'').replace(/'/g,"\\'")}')">
+    <strong>${c.nombre} ${c.apellido||''}</strong></div>`).join('');
+  if (clientes.length === 0) html = `<div class="autocomplete-item" style="color:var(--muted)">Sin resultados</div>`;
+  list.innerHTML = html; list.style.display = 'block';
+}
+function selectClienteSalida(id, nombre, tel) {
+  document.getElementById('sal-cliente').value = nombre;
+  document.getElementById('sal-cliente').dataset.clienteId = id;
+  document.getElementById('sal-tel').value = tel;
+  document.getElementById('sal-cliente-list').style.display = 'none';
+}
+
+async function confirmarSalida(stockId) {
+  const r = await api(`/api/stock_reingreso/${stockId}/salida`, 'POST', {
+    cliente: v('sal-cliente'),
+    cliente_id: document.getElementById('sal-cliente')?.dataset?.clienteId || null,
+    telefono: v('sal-tel'),
+    monto: numVal('sal-monto'),
+  });
+  toast(`Venta registrada como ${r.numero} ✓`); closeModal(); renderStock(); updateAlertBadge();
+}
+
+// ── INVENTARIO (antes "Equipos") (A, B) ───────────────────────────
+async function renderInventario() {
+  const [equipos, prestamos] = await Promise.all([api('/api/equipos'), api('/api/prestamos')]);
+  const totalAmort = equipos.filter(e=>e.activo).reduce((s,e)=>s+e.amort_mensual,0);
+  const rowsEq = equipos.map(e => {
+    const off = !e.activo; const bg = e.activo ? 'var(--success)' : 'var(--bg3)'; const dx = e.activo ? '18px' : '2px';
+    return `<tr style="${off?'opacity:0.4':''}">
+      <td><strong>${e.nombre}</strong></td><td>${e.cantidad||1}</td><td>${e.fecha_compra||'—'}</td>
+      <td>${fmt(e.costo_total)}</td><td>${e.vida_util_meses} meses</td><td>${fmt(e.valor_residual)}</td>
+      <td style="color:var(--cyan)">${fmt(e.amort_mensual)}/mes</td><td>${e.meses_transcurridos} meses</td><td>${fmt(e.valor_actual)}</td>
+      <td><div style="display:flex;align-items:center;gap:4px;cursor:pointer" onclick="toggleEquipo(${e.id})" title="${e.activo?'Activo':'Inactivo'}">
+        <div style="width:36px;height:20px;border-radius:10px;background:${bg};position:relative;transition:background .3s">
+          <div style="width:16px;height:16px;border-radius:50%;background:#fff;position:absolute;top:2px;left:${dx};transition:left .3s"></div></div>
+        <span style="font-size:11px;color:${e.activo?'var(--success)':'var(--muted)'}">${e.activo?'Activo':'Inactivo'}</span></div></td>
+      <td><div style="display:flex;gap:4px">
+        <button class="btn-sm" style="background:var(--cyan);color:#000" onclick='modalEditEquipo(${JSON.stringify(e)})'>✏️</button>
+        <button class="btn-danger btn-sm" onclick="delEquipo(${e.id},\`${e.nombre}\`)">🗑</button></div></td></tr>`;
+  }).join('');
+  // Prestamos with +/- buttons (C)
+  const rowsPrest = prestamos.map(p => {
+    const pct = p.progreso_pct || 0;
+    const barColor = pct >= 100 ? 'var(--success)' : pct > 60 ? 'var(--lime)' : 'var(--cyan)';
+    return `<tr><td><strong>${p.descripcion}</strong></td><td style="color:var(--muted)">${p.entidad||'—'}</td>
+      <td>${fmt(p.monto_total)}</td><td>${fmt(p.monto_adjudicado)}</td><td>${fmt(p.cuota_mensual)}/mes</td><td>${p.cuotas}</td>
+      <td><div style="display:flex;align-items:center;gap:6px">
+        <button class="cuota-btn btn-danger" onclick="changeCuotaPrestamo(${p.id},-1)">−</button>
+        <strong>${p.cuotas_pagadas}</strong>
+        <button class="cuota-btn btn-primary" onclick="changeCuotaPrestamo(${p.id},1)">+</button></div></td>
+      <td><div style="display:flex;align-items:center;gap:6px">
+        <div style="flex:1;height:8px;background:var(--bg3);border-radius:4px;overflow:hidden;min-width:60px">
+          <div style="height:100%;width:${pct}%;background:${barColor};border-radius:4px;transition:width .4s"></div></div>
+        <span style="font-size:11px;color:var(--muted);white-space:nowrap">${p.cuotas_pagadas}/${p.cuotas}</span></div></td>
+      <td style="color:${p.saldo_pendiente>0?'var(--warn)':'var(--success)'};font-weight:700">${fmt(p.saldo_pendiente)}</td>
+      <td><div style="display:flex;gap:4px">
+        <button class="btn-sm" style="background:var(--cyan);color:#000" onclick="modalEditPrestamo(${p.id})">✏️</button>
+        <button class="btn-danger btn-sm" onclick="delPrestamo(${p.id})">🗑</button></div></td></tr>`;
+  }).join('');
+  document.getElementById('content').innerHTML = `
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab(this,'tab-equipos-list')">🖨️ Inventario</button>
+      <button class="tab-btn" onclick="switchTab(this,'tab-prestamos')">💳 Préstamos</button></div>
+    <div class="tab-content active" id="tab-equipos-list">
+      <div class="toolbar"><button class="btn-primary" onclick="modalNuevoEquipo()">+ Nuevo equipo</button></div>
+      <div class="card" style="padding:0;overflow:hidden;margin-bottom:16px"><table><thead><tr>
+        <th>Equipo</th><th>Cant.</th><th>Fecha compra</th><th>Costo total</th><th>Vida útil</th><th>Valor residual</th>
+        <th>Amort. mensual</th><th>Meses trans.</th><th>Valor actual</th><th>Estado</th><th>Acciones</th></tr></thead>
+        <tbody>${rowsEq || emptyState('Sin equipos')}</tbody></table></div>
+      <div class="card" style="display:flex;align-items:center;gap:20px">
+        <div style="font-size:13px;color:var(--muted)">Amortización total mensual</div>
+        <div style="font-size:24px;font-weight:800;color:var(--cyan)">${fmt(totalAmort)}</div></div></div>
+    <div class="tab-content" id="tab-prestamos">
+      <div class="toolbar"><button class="btn-primary" onclick="modalNuevoPrestamo()">+ Nuevo préstamo</button></div>
+      <div class="card" style="padding:0;overflow:hidden"><table><thead><tr>
+        <th>Descripción</th><th>Entidad</th><th>Monto total</th><th>Adjudicado</th><th>Cuota mensual</th><th>Cuotas</th>
+        <th>Pagadas</th><th>Progreso</th><th>Saldo</th><th>Acciones</th></tr></thead>
+        <tbody>${rowsPrest || emptyState('Sin préstamos')}</tbody></table></div></div>`;
+}
+
+function modalNuevoEquipo() {
+  openModal('Nuevo equipo', `<div class="form-grid cols2">
+    <div class="form-group" style="grid-column:1/-1"><div class="form-label">Nombre</div><input id="eq-nombre"></div>
+    <div class="form-group"><div class="form-label">Cantidad</div><input id="eq-cant" type="number" class="no-sep" value="1"></div>
+    <div class="form-group"><div class="form-label">Fecha de compra</div><input id="eq-fecha" type="date"></div>
+    <div class="form-group"><div class="form-label">Costo total (₲)</div><input id="eq-costo" type="number"></div>
+    <div class="form-group"><div class="form-label">Vida útil (meses)</div><input id="eq-vida" type="number" class="no-sep" value="48"></div>
+    <div class="form-group"><div class="form-label">Valor residual (₲)</div><input id="eq-resid" type="number"></div></div>`,
+    `<button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn-primary" onclick="saveEquipo()">Guardar</button>`);
+}
+async function saveEquipo() {
+  await api('/api/equipos', 'POST', { nombre: v('eq-nombre'), cantidad: v('eq-cant'),
+    fecha_compra: v('eq-fecha'), costo_total: numVal('eq-costo'), vida_util_meses: v('eq-vida'), valor_residual: numVal('eq-resid') });
+  toast('Equipo guardado ✓'); closeModal(); renderInventario();
+}
+function modalEditEquipo(e) {
+  openModal('Editar equipo', `<div class="form-grid cols2">
+    <div class="form-group" style="grid-column:1/-1"><div class="form-label">Nombre</div><input id="eq-edit-nombre" value="${e.nombre}"></div>
+    <div class="form-group"><div class="form-label">Cantidad</div><input id="eq-edit-cant" type="number" class="no-sep" value="${e.cantidad||1}"></div>
+    <div class="form-group"><div class="form-label">Fecha de compra</div><input id="eq-edit-fecha" type="date" value="${e.fecha_compra||''}"></div>
+    <div class="form-group"><div class="form-label">Costo total (₲)</div><input id="eq-edit-costo" type="number" value="${e.costo_total}"></div>
+    <div class="form-group"><div class="form-label">Vida útil (meses)</div><input id="eq-edit-vida" type="number" class="no-sep" value="${e.vida_util_meses}"></div>
+    <div class="form-group"><div class="form-label">Valor residual (₲)</div><input id="eq-edit-residual" type="number" value="${e.valor_residual}"></div></div>`,
+    `<button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn-primary" onclick="updateEquipo(${e.id})">Actualizar</button>`);
+}
+async function updateEquipo(id) {
+  await api('/api/equipos/'+id, 'PUT', { nombre: v('eq-edit-nombre'), cantidad: v('eq-edit-cant'),
+    fecha_compra: v('eq-edit-fecha'), costo_total: numVal('eq-edit-costo'),
+    vida_util_meses: v('eq-edit-vida'), valor_residual: numVal('eq-edit-residual') });
+  toast('Equipo actualizado ✓'); closeModal(); renderInventario();
+}
+async function delEquipo(id, nombre) { if (!confirm(`¿ELIMINAR "${nombre}"?`)) return; await api('/api/equipos/'+id, 'DELETE'); toast('Eliminado'); renderInventario(); }
+async function toggleEquipo(id) { await api('/api/equipos/'+id+'/toggle', 'PATCH'); renderInventario(); }
+
+// Préstamos (C)
+function modalNuevoPrestamo() {
+  openModal('Nuevo préstamo', `<div class="form-grid cols2">
+    <div class="form-group" style="grid-column:1/-1"><div class="form-label">Descripción</div><input id="pr-desc"></div>
+    <div class="form-group"><div class="form-label">Entidad</div><input id="pr-ent"></div>
+    <div class="form-group"><div class="form-label">Monto total (₲)</div><input id="pr-monto" type="number"></div>
+    <div class="form-group"><div class="form-label">Monto adjudicado (₲)</div><input id="pr-adj" type="number"></div>
+    <div class="form-group"><div class="form-label">Cuotas</div><input id="pr-cuotas" type="number" class="no-sep" value="12"></div>
+    <div class="form-group"><div class="form-label">Cuota mensual (₲)</div><input id="pr-cuotam" type="number"></div>
+    <div class="form-group"><div class="form-label">Fecha inicio</div><input id="pr-fi" type="date"></div>
+    <div class="form-group"><div class="form-label">Fecha fin</div><input id="pr-ff" type="date"></div></div>`,
+    `<button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn-primary" onclick="savePrestamo()">Guardar</button>`);
+}
+async function savePrestamo() {
+  await api('/api/prestamos', 'POST', { descripcion: v('pr-desc'), entidad: v('pr-ent'),
+    monto_total: numVal('pr-monto'), monto_adjudicado: numVal('pr-adj'),
+    cuotas: v('pr-cuotas'), cuota_mensual: numVal('pr-cuotam'),
+    fecha_inicio: v('pr-fi'), fecha_fin: v('pr-ff') });
+  toast('Préstamo guardado ✓'); closeModal(); renderInventario();
+}
+async function modalEditPrestamo(id) {
+  const prestamos = await api('/api/prestamos'); const p = prestamos.find(x => x.id === id); if (!p) return;
+  openModal('Editar préstamo', `<div class="form-grid cols2">
+    <div class="form-group" style="grid-column:1/-1"><div class="form-label">Descripción</div><input id="pr-desc" value="${p.descripcion}"></div>
+    <div class="form-group"><div class="form-label">Entidad</div><input id="pr-ent" value="${p.entidad||''}"></div>
+    <div class="form-group"><div class="form-label">Monto total (₲)</div><input id="pr-monto" type="number" value="${p.monto_total}"></div>
+    <div class="form-group"><div class="form-label">Monto adjudicado (₲)</div><input id="pr-adj" type="number" value="${p.monto_adjudicado}"></div>
+    <div class="form-group"><div class="form-label">Cuotas</div><input id="pr-cuotas" type="number" class="no-sep" value="${p.cuotas}"></div>
+    <div class="form-group"><div class="form-label">Cuotas pagadas</div><input id="pr-cpag" type="number" class="no-sep" value="${p.cuotas_pagadas||0}"></div>
+    <div class="form-group"><div class="form-label">Cuota mensual (₲)</div><input id="pr-cuotam" type="number" value="${p.cuota_mensual}"></div>
+    <div class="form-group"><div class="form-label">Fecha inicio</div><input id="pr-fi" type="date" value="${p.fecha_inicio||''}"></div>
+    <div class="form-group"><div class="form-label">Fecha fin</div><input id="pr-ff" type="date" value="${p.fecha_fin||''}"></div></div>`,
+    `<button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn-primary" onclick="updatePrestamo(${id})">Actualizar</button>`);
+}
+async function updatePrestamo(id) {
+  await api(`/api/prestamos/${id}`, 'PUT', { descripcion: v('pr-desc'), entidad: v('pr-ent'),
+    monto_total: numVal('pr-monto'), monto_adjudicado: numVal('pr-adj'),
+    cuotas: v('pr-cuotas'), cuotas_pagadas: v('pr-cpag'), cuota_mensual: numVal('pr-cuotam'),
+    fecha_inicio: v('pr-fi'), fecha_fin: v('pr-ff') });
+  toast('Préstamo actualizado ✓'); closeModal(); renderInventario();
+}
+async function changeCuotaPrestamo(id, delta) {
+  await api(`/api/prestamos/${id}/cuotas`, 'PATCH', { delta }); renderInventario();
+}
+async function delPrestamo(id) { if (!confirm('¿Eliminar préstamo?')) return; await api(`/api/prestamos/${id}`, 'DELETE'); toast('Eliminado'); renderInventario(); }
+
+// ── PARÁMETROS ────────────────────────────────────────────────────
+async function renderParametros() {
+  const [p, cats] = await Promise.all([api('/api/parametros'), api('/api/categorias')]);
+  document.getElementById('content').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:900px">
+      <div class="card"><div class="section-title">⚙️ Parámetros</div>
+        <div class="form-grid">
+          <div class="form-group"><div class="form-label">Horas de trabajo por mes</div><input id="p-horas" type="number" class="no-sep" value="${p.horas_mes||160}"></div>
+          <div class="form-group"><div class="form-label">Sueldo mensual (₲)</div><input id="p-sueldo" type="number" value="${p.sueldo_mensual||3500000}"></div>
+          <div class="form-group"><div class="form-label">Gastos fijos mensuales (₲)</div><input id="p-gfijos" type="number" value="${p.gastos_fijos||800000}"></div>
+          <div class="form-group"><div class="form-label">Ventas estimadas/mes</div><input id="p-ventas" type="number" class="no-sep" value="${p.ventas_estimadas_mes||80}"></div>
+          <div class="form-group"><div class="form-label">Margen deseado</div><input id="p-margen" type="number" class="no-sep" step="0.01" max="0.99" value="${p.margen_deseado||0.35}"></div>
+          <div class="form-group"><div class="form-label">IVA / Impuestos</div><input id="p-imp" type="number" class="no-sep" step="0.01" value="${p.impuestos||0.10}"></div>
+        </div><div class="divider"></div><button class="btn-primary" onclick="saveParametros()">Guardar</button></div>
+      <div class="card"><div class="section-title">🏷️ Categorías</div>
+        <div id="cat-list">${cats.map(c => `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg3);border-radius:6px;margin-bottom:6px"><span style="font-size:13px">${c}</span></div>`).join('')}</div>
+        <div class="divider"></div><div style="display:flex;gap:8px"><input id="nueva-cat" placeholder="Nueva categoría..." style="flex:1">
+          <button class="btn-primary" onclick="addCategoria()">+ Agregar</button></div></div></div>`;
+}
+async function addCategoria() { const val = v('nueva-cat').trim(); if (!val) return; await api('/api/categorias', 'POST', {valor: val}); toast(`"${val}" agregada ✓`); renderParametros(); }
+async function saveParametros() {
+  await api('/api/parametros', 'PUT', { horas_mes: v('p-horas'), sueldo_mensual: numVal('p-sueldo'),
+    gastos_fijos: numVal('p-gfijos'), ventas_estimadas_mes: v('p-ventas'), margen_deseado: v('p-margen'), impuestos: v('p-imp') });
+  toast('Parámetros guardados ✓');
+}
+
+// ── HELPERS UI ────────────────────────────────────────────────────
+function filterTable(input, tableId) {
+  const q = input.value.toLowerCase();
+  const tipo = document.getElementById('fil-tipo')?.value.toLowerCase() || '';
+  document.querySelectorAll(`#${tableId} tbody tr`).forEach(tr => {
+    const text = tr.textContent.toLowerCase();
+    tr.style.display = (!q || text.includes(q)) && (!tipo || text.includes(tipo)) ? '' : 'none';
+  });
+}
+function switchTab(btn, tabId) {
+  btn.closest('.tabs').querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  let el = btn.closest('.tabs').nextElementSibling;
+  while (el) { if (el.classList?.contains('tab-content')) el.classList.remove('active'); el = el.nextElementSibling; }
+  document.getElementById(tabId)?.classList.add('active');
+}
+function emptyState(msg, sub='') {
+  return `<tr><td colspan="20"><div class="empty-state"><img src="/static/img/PIXIE.png" alt=""><p>${msg}</p><small>${sub}</small></div></td></tr>`;
+}
+function exportCSV() {
+  const tablas = ['insumos','pedidos','gastos','consumos','marketing','equipos','clientes','stock_reingreso'];
+  const menu = tablas.map(t => `<button class="btn-secondary" style="width:100%;margin-bottom:8px;text-align:left"
+    onclick="window.open('/api/export/${t}','_blank');closeModal()">⬇ Exportar ${t}.csv</button>`).join('');
+  openModal('Exportar datos', menu, `<button class="btn-secondary" onclick="closeModal()">Cerrar</button>`);
+}
+
+// ── INIT ──────────────────────────────────────────────────────────
+navigate('dashboard');
+</script>
+</body>
+</html>
