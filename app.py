@@ -761,6 +761,41 @@ def api_balance(year):
     conn.close()
     return jsonify(result)
 
+# ── BASA ───────────────────────────────────────────────────────────────────
+
+@app.route('/api/sql', methods=['POST'])
+def ejecutar_sql():
+    clave = request.headers.get('x-api-key')
+
+    # 🔐 cambiá esto por una clave tuya
+    if clave != "ueTJ{z410]Z^":
+        return jsonify({'error': 'No autorizado'}), 403
+
+    data = request.json
+    query = data.get('query')
+
+    if not query:
+        return jsonify({'error': 'Query vacía'}), 400
+
+    conn = get_db()
+    try:
+        cur = conn.execute(query)
+
+        # Si es SELECT → devolver datos
+        if query.strip().lower().startswith("select"):
+            rows = [dict(r) for r in cur.fetchall()]
+            conn.close()
+            return jsonify(rows)
+
+        # Si es INSERT/UPDATE/DELETE
+        conn.commit()
+        conn.close()
+        return jsonify({'ok': True})
+
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)})
+
 if __name__ == '__main__':
     init_db()
     print("\n  ██████╗ ██╗██╗  ██╗███████╗██╗      █████╗  ██████╗ ")
