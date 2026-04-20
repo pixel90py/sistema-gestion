@@ -109,9 +109,9 @@ def api_dashboard():
     hoy = date.today()
 
     mes_ref_row = fetchone(conn, """
-        SELECT TO_CHAR(MAX(fecha), 'YYYY-MM') as ultimo_mes
-        FROM pedidos WHERE estado != 'Cancelado'
-    """)
+    SELECT TO_CHAR(MAX(fecha::date), 'YYYY-MM') as ultimo_mes
+    FROM pedidos WHERE estado != 'Cancelado'
+""")
 
     if mes_ref_row and mes_ref_row['ultimo_mes']:
         y_ref, m_ref = map(int, mes_ref_row['ultimo_mes'].split('-'))
@@ -608,7 +608,7 @@ def api_gastos():
     conn = get_db()
     mes = request.args.get('mes')
     if mes:
-        rows = fetchall(conn, "SELECT * FROM gastos WHERE TO_CHAR(fecha,'YYYY-MM')=%s ORDER BY fecha DESC", (mes,))
+        rows = fetchall(conn, "SELECT * FROM gastos WHERE TO_CHAR(fecha::date,'YYYY-MM')=%s ORDER BY fecha DESC", (mes,))
     else:
         rows = fetchall(conn, "SELECT * FROM gastos ORDER BY fecha DESC LIMIT 200")
     conn.close()
