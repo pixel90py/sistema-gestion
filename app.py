@@ -799,13 +799,16 @@ def ejecutar_sql():
 # ── BASE TEST ───────────────────────────────────────────────────────────────────
 @app.route('/test-db')
 def test_db():
-    from db import get_db
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT 1")
-    result = cur.fetchone()
-    conn.close()
-    return {"ok": True, "result": result}
+    try:
+        from db import get_db
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        result = cur.fetchone()[0]  # 👈 esto es la clave
+        conn.close()
+        return {"ok": True, "result": result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 if __name__ == '__main__':
     init_db()
