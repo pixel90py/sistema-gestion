@@ -1,39 +1,77 @@
-from flask import Flask, jsonify, request, render_template, send_from_directory
+from flask import Flask, jsonify, request, render_template, send_from_directory, Response
 from db import get_db, init_db
-import os, json
+import os, csv, io
 from datetime import datetime, date
 from calendar import monthrange
+import psycopg2.extras
 
 app = Flask(__name__)
 app.config['JSON_ENSURE_ASCII'] = False
 
 # ── helpers ──────────────────────────────────────────────────────────────────
+def get_cursor(conn):
+    return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+def fetchall(conn, sql, params=()):
+    cur = get_cursor(conn)
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+    cur.close()
+    return rows
+
+def fetchone(conn, sql, params=()):
+    cur = get_cursor(conn)
+    cur.execute(sql, params)
+    row = cur.fetchone()
+    cur.close()
+    return row
+
+def execute(conn, sql, params=()):
+    cur = get_cursor(conn)
+    cur.execute(sql, params)
+    # lastrowid equivalent in psycopg2
+    lastrow = None
+    try:
+        lastrow = cur.fetchone()
+    except Exception:
+        pass
+    cur.close()
+    return lastrow
+
 def rows_to_list(rows):
-    return [dict(r) for r in rows]
+    return [dict(r) for r in rows] if rows else []
 
 def stock_actual(conn, insumo_id):
-    row = conn.execute("SELECT stock_inicial, uds_por_pack FROM insumos WHERE id=?", (insumo_id,)).fetchone()
+    row = fetchone(conn, "SELECT stock_inicial, uds_por_pack FROM insumos WHERE id=%s", (insumo_id,))
     if not row: return 0
-    compras = conn.execute("SELECT COALESCE(SUM(cantidad_uds),0) FROM compras WHERE insumo_id=?", (insumo_id,)).fetchone()[0]
-    consumos = conn.execute("SELECT COALESCE(SUM(cantidad_real),0) FROM consumos WHERE insumo_id=?", (insumo_id,)).fetchone()[0]
+    compras = fetchone(conn, "SELECT COALESCE(SUM(cantidad_uds),0) as total FROM compras WHERE insumo_id=%s", (insumo_id,))['total']
+    consumos = fetchone(conn, "SELECT COALESCE(SUM(cantidad_real),0) as total FROM consumos WHERE insumo_id=%s", (insumo_id,))['total']
     return (row['stock_inicial'] or 0) + (compras or 0) - (consumos or 0)
 
 def costo_unit(conn, insumo_id):
-    row = conn.execute("SELECT precio_pack, uds_por_pack FROM insumos WHERE id=?", (insumo_id,)).fetchone()
+    row = fetchone(conn, "SELECT precio_pack, uds_por_pack FROM insumos WHERE id=%s", (insumo_id,))
     if not row or not row['uds_por_pack']: return 0
     return (row['precio_pack'] or 0) / row['uds_por_pack']
 
 def amort_mensual(conn):
-    equipos = conn.execute("SELECT costo_total, vida_util_meses, valor_residual FROM equipos WHERE activo=1").fetchall()
+    equipos = fetchall(conn, "SELECT costo_total, vida_util_meses, valor_residual FROM equipos WHERE activo=1")
     return sum((e['costo_total'] - e['valor_residual']) / max(e['vida_util_meses'], 1) for e in equipos)
 
 def param(conn, key, default=0):
-    row = conn.execute("SELECT valor FROM parametros WHERE clave=?", (key,)).fetchone()
+    row = fetchone(conn, "SELECT valor FROM parametros WHERE clave=%s", (key,))
     try: return float(row['valor']) if row else default
     except: return default
 
 def now_iso():
     return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+def insert_returning_id(conn, sql, params=()):
+    """Ejecuta un INSERT ... RETURNING id y devuelve el id generado."""
+    cur = get_cursor(conn)
+    cur.execute(sql, params)
+    row = cur.fetchone()
+    cur.close()
+    return row['id'] if row else None
 
 # ── static ────────────────────────────────────────────────────────────────────
 @app.route('/')
@@ -48,17 +86,12 @@ def serve_img(filename):
 @app.route('/api/dashboard')
 def api_dashboard():
     conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
     hoy = date.today()
 
-    # ⚠️ strftime → TO_CHAR en PostgreSQL
-    cur.execute("""
+    mes_ref_row = fetchone(conn, """
         SELECT TO_CHAR(MAX(fecha), 'YYYY-MM') as ultimo_mes
-        FROM pedidos
-        WHERE estado != 'Cancelado'
+        FROM pedidos WHERE estado != 'Cancelado'
     """)
-    mes_ref_row = cur.fetchone()
 
     if mes_ref_row and mes_ref_row['ultimo_mes']:
         y_ref, m_ref = map(int, mes_ref_row['ultimo_mes'].split('-'))
@@ -69,114 +102,80 @@ def api_dashboard():
     mes_ini = f"{ref.year}-{ref.month:02d}-01"
     mes_fin = f"{ref.year}-{ref.month:02d}-{monthrange(ref.year, ref.month)[1]}"
 
-    # ⚠️ ? → %s
-    cur.execute("""
-        SELECT COALESCE(SUM(pi.cantidad * pi.precio_unit),0)
+    ventas_mes = fetchone(conn, """
+        SELECT COALESCE(SUM(pi.cantidad * pi.precio_unit),0) as total
         FROM pedidos p
         JOIN pedido_items pi ON pi.pedido_id = p.id
         WHERE p.fecha BETWEEN %s AND %s AND p.estado != 'Cancelado'
-    """, (mes_ini, mes_fin))
-    ventas_mes = cur.fetchone()['coalesce']
+    """, (mes_ini, mes_fin))['total']
 
-    cur.execute("""
+    gastos_mes = fetchone(conn, """
         SELECT COALESCE(SUM(monto),0) as total
-        FROM gastos
-        WHERE fecha BETWEEN %s AND %s
-    """, (mes_ini, mes_fin))
-    gastos_mes = cur.fetchone()['total']
+        FROM gastos WHERE fecha BETWEEN %s AND %s
+    """, (mes_ini, mes_fin))['total']
 
-    cur.execute("""
-        SELECT COUNT(*) as total
-        FROM pedidos
+    pedidos_mes = fetchone(conn, """
+        SELECT COUNT(*) as total FROM pedidos
         WHERE fecha BETWEEN %s AND %s AND estado != 'Cancelado'
-    """, (mes_ini, mes_fin))
-    pedidos_mes = cur.fetchone()['total']
+    """, (mes_ini, mes_fin))['total']
 
-    cur.execute("""
-        SELECT COUNT(*) as total
-        FROM pedidos
+    pendientes = fetchone(conn, """
+        SELECT COUNT(*) as total FROM pedidos
         WHERE estado IN ('Pendiente','En Producción')
-    """)
-    pendientes = cur.fetchone()['total']
+    """)['total']
 
-    cur.execute("SELECT id, nombre, stock_minimo FROM insumos WHERE activo=1")
-    insumos = cur.fetchall()
-
+    insumos = fetchall(conn, "SELECT id, nombre, stock_minimo FROM insumos WHERE activo=1")
     alertas = []
     for ins in insumos:
         s = stock_actual(conn, ins['id'])
         if s <= ins['stock_minimo']:
-            alertas.append({
-                'nombre': ins['nombre'],
-                'stock': round(s, 2),
-                'minimo': ins['stock_minimo']
-            })
+            alertas.append({'nombre': ins['nombre'], 'stock': round(s, 2), 'minimo': ins['stock_minimo']})
 
-    cur.execute("""
+    por_cat = fetchall(conn, """
         SELECT pr.categoria, COALESCE(SUM(pi.cantidad * pi.precio_unit),0) as total
         FROM pedidos p
         JOIN pedido_items pi ON pi.pedido_id = p.id
         JOIN productos pr ON pr.id = pi.producto_id
         WHERE p.fecha BETWEEN %s AND %s AND p.estado != 'Cancelado'
-        GROUP BY pr.categoria
-        ORDER BY total DESC
+        GROUP BY pr.categoria ORDER BY total DESC
     """, (mes_ini, mes_fin))
-    por_cat = cur.fetchall()
 
     meses_data = []
     for i in range(5, -1, -1):
         m = ref.month - i
         y = ref.year
         while m <= 0:
-            m += 12
-            y -= 1
-
+            m += 12; y -= 1
         ini = f"{y}-{m:02d}-01"
         fin = f"{y}-{m:02d}-{monthrange(y, m)[1]}"
-
-        cur.execute("""
+        v = fetchone(conn, """
             SELECT COALESCE(SUM(pi.cantidad * pi.precio_unit),0) as total
-            FROM pedidos p
-            JOIN pedido_items pi ON pi.pedido_id = p.id
+            FROM pedidos p JOIN pedido_items pi ON pi.pedido_id = p.id
             WHERE p.fecha BETWEEN %s AND %s AND p.estado != 'Cancelado'
-        """, (ini, fin))
-        v = cur.fetchone()['total']
-
-        cur.execute("""
-            SELECT COALESCE(SUM(monto),0) as total
-            FROM gastos
-            WHERE fecha BETWEEN %s AND %s
-        """, (ini, fin))
-        g = cur.fetchone()['total']
-
+        """, (ini, fin))['total']
+        g = fetchone(conn, "SELECT COALESCE(SUM(monto),0) as total FROM gastos WHERE fecha BETWEEN %s AND %s", (ini, fin))['total']
         meses_data.append({'mes': f"{y}-{m:02d}", 'ventas': v, 'gastos': g})
 
     ganancia = ventas_mes - gastos_mes
     margen = (ganancia / ventas_mes * 100) if ventas_mes > 0 else 0
-
-    cur.close()
     conn.close()
 
     return jsonify({
-        'ventas_mes': ventas_mes,
-        'gastos_mes': gastos_mes,
-        'ganancia': ganancia,
-        'margen': round(margen, 1),
-        'pedidos_mes': pedidos_mes,
-        'pendientes': pendientes,
-        'alertas': alertas,
-        'por_categoria': por_cat,
+        'ventas_mes': ventas_mes, 'gastos_mes': gastos_mes,
+        'ganancia': ganancia, 'margen': round(margen, 1),
+        'pedidos_mes': pedidos_mes, 'pendientes': pendientes,
+        'alertas': alertas, 'por_categoria': rows_to_list(por_cat),
         'historico': meses_data,
         'mes_referencia': f"{ref.year}-{ref.month:02d}",
     })
 
-# ── ALERTAS COUNT (for sidebar badge) ─────────────────────────────────────────
+# ── ALERTAS COUNT ─────────────────────────────────────────────────────────────
 @app.route('/api/alertas_count')
 def api_alertas_count():
     conn = get_db()
-    insumos = conn.execute("SELECT id, stock_minimo FROM insumos WHERE activo=1").fetchall()
+    insumos = fetchall(conn, "SELECT id, stock_minimo FROM insumos WHERE activo=1")
     count = sum(1 for ins in insumos if stock_actual(conn, ins['id']) <= ins['stock_minimo'])
-    stock_count = conn.execute("SELECT COUNT(*) FROM stock_reingreso WHERE estado='Disponible'").fetchone()[0]
+    stock_count = fetchone(conn, "SELECT COUNT(*) as total FROM stock_reingreso WHERE estado='Disponible'")['total']
     conn.close()
     return jsonify({'count': count, 'stock_count': stock_count})
 
@@ -184,7 +183,7 @@ def api_alertas_count():
 @app.route('/api/insumos', methods=['GET'])
 def api_insumos():
     conn = get_db()
-    insumos = conn.execute("SELECT * FROM insumos WHERE activo=1 ORDER BY categoria, nombre").fetchall()
+    insumos = fetchall(conn, "SELECT * FROM insumos WHERE activo=1 ORDER BY categoria, nombre")
     result = []
     for ins in insumos:
         d = dict(ins)
@@ -198,7 +197,9 @@ def api_insumos():
 @app.route('/api/insumos', methods=['POST'])
 def api_insumos_post():
     d = request.json; conn = get_db()
-    conn.execute("""INSERT INTO insumos (nombre,categoria,proveedor,unidad_compra,uds_por_pack,precio_pack,unidad_consum,stock_inicial,stock_minimo) VALUES (?,?,?,?,?,?,?,?,?)""",
+    execute(conn, """INSERT INTO insumos
+        (nombre,categoria,proveedor,unidad_compra,uds_por_pack,precio_pack,unidad_consum,stock_inicial,stock_minimo)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (d['nombre'], d['categoria'], d.get('proveedor',''), d.get('unidad_compra',''),
          float(d.get('uds_por_pack',1)), float(d.get('precio_pack',0)),
          d.get('unidad_consum',''), float(d.get('stock_inicial',0)), float(d.get('stock_minimo',0))))
@@ -208,7 +209,8 @@ def api_insumos_post():
 @app.route('/api/insumos/<int:iid>', methods=['PUT'])
 def api_insumos_put(iid):
     d = request.json; conn = get_db()
-    conn.execute("""UPDATE insumos SET nombre=?,categoria=?,proveedor=?,unidad_compra=?,uds_por_pack=?,precio_pack=?,unidad_consum=?,stock_inicial=?,stock_minimo=? WHERE id=?""",
+    execute(conn, """UPDATE insumos SET nombre=%s,categoria=%s,proveedor=%s,unidad_compra=%s,
+        uds_por_pack=%s,precio_pack=%s,unidad_consum=%s,stock_inicial=%s,stock_minimo=%s WHERE id=%s""",
         (d['nombre'], d['categoria'], d.get('proveedor',''), d.get('unidad_compra',''),
          float(d.get('uds_por_pack',1)), float(d.get('precio_pack',0)),
          d.get('unidad_consum',''), float(d.get('stock_inicial',0)), float(d.get('stock_minimo',0)), iid))
@@ -218,7 +220,7 @@ def api_insumos_put(iid):
 @app.route('/api/insumos/<int:iid>', methods=['DELETE'])
 def api_insumos_del(iid):
     conn = get_db()
-    conn.execute("UPDATE insumos SET activo=0 WHERE id=?", (iid,))
+    execute(conn, "UPDATE insumos SET activo=0 WHERE id=%s", (iid,))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
@@ -226,7 +228,7 @@ def api_insumos_del(iid):
 @app.route('/api/compras', methods=['POST'])
 def api_compras_post():
     d = request.json; conn = get_db()
-    conn.execute("INSERT INTO compras (fecha,insumo_id,cantidad_uds,costo_total,proveedor,notas) VALUES (?,?,?,?,?,?)",
+    execute(conn, "INSERT INTO compras (fecha,insumo_id,cantidad_uds,costo_total,proveedor,notas) VALUES (%s,%s,%s,%s,%s,%s)",
         (d['fecha'], d['insumo_id'], float(d['cantidad_uds']),
          float(d.get('costo_total',0)), d.get('proveedor',''), d.get('notas','')))
     conn.commit(); conn.close()
@@ -236,17 +238,18 @@ def api_compras_post():
 @app.route('/api/consumos', methods=['GET'])
 def api_consumos():
     conn = get_db()
-    rows = conn.execute("""SELECT c.*, i.nombre as insumo_nombre, i.unidad_consum,
-        ROUND(c.cantidad_real * (i.precio_pack / MAX(i.uds_por_pack,1)), 0) as costo_total
+    rows = fetchall(conn, """
+        SELECT c.*, i.nombre as insumo_nombre, i.unidad_consum,
+            ROUND(c.cantidad_real * (i.precio_pack / GREATEST(i.uds_por_pack,1))) as costo_total
         FROM consumos c LEFT JOIN insumos i ON i.id = c.insumo_id
-        ORDER BY c.fecha DESC, c.id DESC LIMIT 200""").fetchall()
+        ORDER BY c.fecha DESC, c.id DESC LIMIT 200""")
     conn.close()
     return jsonify(rows_to_list(rows))
 
 @app.route('/api/consumos', methods=['POST'])
 def api_consumos_post():
     d = request.json; conn = get_db()
-    conn.execute("INSERT INTO consumos (fecha,tipo,descripcion,pedido_ref,insumo_id,cantidad_base,cantidad_real,notas) VALUES (?,?,?,?,?,?,?,?)",
+    execute(conn, "INSERT INTO consumos (fecha,tipo,descripcion,pedido_ref,insumo_id,cantidad_base,cantidad_real,notas) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
         (d['fecha'], d['tipo'], d.get('descripcion',''), d.get('pedido_ref',''),
          d.get('insumo_id'), float(d.get('cantidad_base',0)), float(d.get('cantidad_real',0)), d.get('notas','')))
     conn.commit(); conn.close()
@@ -255,7 +258,7 @@ def api_consumos_post():
 @app.route('/api/consumos/<int:cid>', methods=['DELETE'])
 def api_consumos_del(cid):
     conn = get_db()
-    conn.execute("DELETE FROM consumos WHERE id=?", (cid,))
+    execute(conn, "DELETE FROM consumos WHERE id=%s", (cid,))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
@@ -263,11 +266,15 @@ def api_consumos_del(cid):
 @app.route('/api/productos', methods=['GET'])
 def api_productos():
     conn = get_db()
-    prods = conn.execute("SELECT * FROM productos WHERE activo=1 ORDER BY categoria,nombre").fetchall()
+    prods = fetchall(conn, "SELECT * FROM productos WHERE activo=1 ORDER BY categoria,nombre")
     result = []
     for p in prods:
         d = dict(p)
-        recetas = conn.execute("SELECT r.*, i.nombre as insumo_nombre, i.unidad_consum, ROUND(i.precio_pack / MAX(i.uds_por_pack,1), 0) as costo_unit FROM recetas r JOIN insumos i ON i.id = r.insumo_id WHERE r.producto_id=?", (p['id'],)).fetchall()
+        recetas = fetchall(conn, """
+            SELECT r.*, i.nombre as insumo_nombre, i.unidad_consum,
+                ROUND(i.precio_pack / GREATEST(i.uds_por_pack,1)) as costo_unit
+            FROM recetas r JOIN insumos i ON i.id = r.insumo_id WHERE r.producto_id=%s
+        """, (p['id'],))
         d['receta'] = rows_to_list(recetas)
         try:
             horas_mes = param(conn,'horas_mes',160); sueldo = param(conn,'sueldo_mensual',3500000)
@@ -288,36 +295,40 @@ def api_productos():
 @app.route('/api/productos', methods=['POST'])
 def api_productos_post():
     d = request.json; conn = get_db()
-    cur = conn.execute("INSERT INTO productos (nombre,categoria) VALUES (?,?)", (d['nombre'], d['categoria']))
-    pid = cur.lastrowid
+    pid = insert_returning_id(conn,
+        "INSERT INTO productos (nombre,categoria) VALUES (%s,%s) RETURNING id",
+        (d['nombre'], d['categoria']))
     for item in d.get('receta', []):
-        conn.execute("INSERT OR REPLACE INTO recetas (producto_id,insumo_id,cantidad) VALUES (?,?,?)",
-                     (pid, item['insumo_id'], float(item['cantidad'])))
+        execute(conn, """INSERT INTO recetas (producto_id,insumo_id,cantidad) VALUES (%s,%s,%s)
+            ON CONFLICT (producto_id,insumo_id) DO UPDATE SET cantidad=EXCLUDED.cantidad""",
+            (pid, item['insumo_id'], float(item['cantidad'])))
     conn.commit(); conn.close()
     return jsonify({'ok': True, 'id': pid})
 
 @app.route('/api/productos/<int:pid>/receta', methods=['PUT'])
 def api_receta_put(pid):
     items = request.json; conn = get_db()
-    conn.execute("DELETE FROM recetas WHERE producto_id=?", (pid,))
+    execute(conn, "DELETE FROM recetas WHERE producto_id=%s", (pid,))
     for item in items:
         if float(item.get('cantidad', 0)) > 0:
-            conn.execute("INSERT INTO recetas (producto_id,insumo_id,cantidad) VALUES (?,?,?)",
-                         (pid, item['insumo_id'], float(item['cantidad'])))
+            execute(conn, "INSERT INTO recetas (producto_id,insumo_id,cantidad) VALUES (%s,%s,%s)",
+                (pid, item['insumo_id'], float(item['cantidad'])))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
 @app.route('/api/costo_producto/<int:pid>')
 def api_costo_producto(pid):
     conn = get_db()
-    p = param
-    horas_mes = p(conn,'horas_mes',160); sueldo = p(conn,'sueldo_mensual',3500000)
-    g_fijos = p(conn,'gastos_fijos',800000); ventas_e = p(conn,'ventas_estimadas_mes',80)
-    margen = p(conn,'margen_deseado',0.35); impuestos = p(conn,'impuestos',0.10)
-    recetas = conn.execute("SELECT r.cantidad, i.precio_pack, i.uds_por_pack FROM recetas r JOIN insumos i ON i.id = r.insumo_id WHERE r.producto_id=?", (pid,)).fetchall()
+    horas_mes = param(conn,'horas_mes',160); sueldo = param(conn,'sueldo_mensual',3500000)
+    g_fijos = param(conn,'gastos_fijos',800000); ventas_e = param(conn,'ventas_estimadas_mes',80)
+    margen = param(conn,'margen_deseado',0.35); impuestos = param(conn,'impuestos',0.10)
+    recetas = fetchall(conn, """
+        SELECT r.cantidad, i.precio_pack, i.uds_por_pack
+        FROM recetas r JOIN insumos i ON i.id = r.insumo_id WHERE r.producto_id=%s
+    """, (pid,))
     costo_mat = sum(r['cantidad'] * (r['precio_pack'] / max(r['uds_por_pack'],1)) for r in recetas)
-    tiempo_hs = 0.5; costo_hora = sueldo / max(horas_mes, 1)
-    mano_obra = tiempo_hs * costo_hora; gasto_unit = g_fijos / max(ventas_e, 1)
+    mano_obra = 0.5 * (sueldo / max(horas_mes, 1))
+    gasto_unit = g_fijos / max(ventas_e, 1)
     amort_unit = amort_mensual(conn) / max(ventas_e, 1)
     costo_total = costo_mat + mano_obra + gasto_unit + amort_unit
     precio_min = costo_total / (1 - margen) if margen < 1 else costo_total
@@ -334,27 +345,27 @@ def api_costo_producto(pid):
 @app.route('/api/clientes', methods=['GET'])
 def api_clientes():
     conn = get_db()
-    rows = conn.execute("SELECT * FROM clientes WHERE activo=1 ORDER BY nombre, apellido").fetchall()
+    rows = fetchall(conn, "SELECT * FROM clientes WHERE activo=1 ORDER BY nombre, apellido")
     conn.close()
     return jsonify(rows_to_list(rows))
 
 @app.route('/api/clientes', methods=['POST'])
 def api_clientes_post():
     d = request.json; conn = get_db()
-    cur = conn.execute("""INSERT INTO clientes (nombre,apellido,tipo_documento,numero_documento,telefono,email,direccion,ciudad,fecha_creacion)
-        VALUES (?,?,?,?,?,?,?,?,?)""",
+    cid = insert_returning_id(conn, """
+        INSERT INTO clientes (nombre,apellido,tipo_documento,numero_documento,telefono,email,direccion,ciudad,fecha_creacion)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (d['nombre'], d.get('apellido',''), d.get('tipo_documento','CI'),
          d.get('numero_documento',''), d.get('telefono',''), d.get('email',''),
          d.get('direccion',''), d.get('ciudad',''), date.today().isoformat()))
-    conn.commit()
-    cid = cur.lastrowid
-    conn.close()
+    conn.commit(); conn.close()
     return jsonify({'ok': True, 'id': cid})
 
 @app.route('/api/clientes/<int:cid>', methods=['PUT'])
 def api_clientes_put(cid):
     d = request.json; conn = get_db()
-    conn.execute("""UPDATE clientes SET nombre=?,apellido=?,tipo_documento=?,numero_documento=?,telefono=?,email=?,direccion=?,ciudad=? WHERE id=?""",
+    execute(conn, """UPDATE clientes SET nombre=%s,apellido=%s,tipo_documento=%s,numero_documento=%s,
+        telefono=%s,email=%s,direccion=%s,ciudad=%s WHERE id=%s""",
         (d['nombre'], d.get('apellido',''), d.get('tipo_documento','CI'),
          d.get('numero_documento',''), d.get('telefono',''), d.get('email',''),
          d.get('direccion',''), d.get('ciudad',''), cid))
@@ -364,16 +375,16 @@ def api_clientes_put(cid):
 @app.route('/api/clientes/<int:cid>', methods=['DELETE'])
 def api_clientes_del(cid):
     conn = get_db()
-    conn.execute("UPDATE clientes SET activo=0 WHERE id=?", (cid,))
+    execute(conn, "UPDATE clientes SET activo=0 WHERE id=%s", (cid,))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
 @app.route('/api/clientes/buscar')
 def api_clientes_buscar():
-    q = request.args.get('q', '')
-    conn = get_db()
-    rows = conn.execute("SELECT * FROM clientes WHERE activo=1 AND (nombre LIKE ? OR apellido LIKE ? OR numero_documento LIKE ?) LIMIT 10",
-        (f'%{q}%', f'%{q}%', f'%{q}%')).fetchall()
+    q = request.args.get('q', ''); conn = get_db()
+    rows = fetchall(conn, """SELECT * FROM clientes WHERE activo=1
+        AND (nombre ILIKE %s OR apellido ILIKE %s OR numero_documento ILIKE %s) LIMIT 10""",
+        (f'%{q}%', f'%{q}%', f'%{q}%'))
     conn.close()
     return jsonify(rows_to_list(rows))
 
@@ -382,17 +393,18 @@ def api_clientes_buscar():
 def api_pedidos():
     conn = get_db()
     estado = request.args.get('estado')
-    q = "SELECT * FROM pedidos"; args = []
-    if estado: q += " WHERE estado=?"; args.append(estado)
-    q += " ORDER BY fecha DESC, id DESC LIMIT 200"
-    pedidos = conn.execute(q, args).fetchall()
+    if estado:
+        pedidos = fetchall(conn, "SELECT * FROM pedidos WHERE estado=%s ORDER BY fecha DESC, id DESC LIMIT 200", (estado,))
+    else:
+        pedidos = fetchall(conn, "SELECT * FROM pedidos ORDER BY fecha DESC, id DESC LIMIT 200")
     result = []
     for p in pedidos:
         d = dict(p)
-        items = conn.execute("SELECT pi.*, pr.nombre as producto_nombre FROM pedido_items pi LEFT JOIN productos pr ON pr.id = pi.producto_id WHERE pi.pedido_id=?", (p['id'],)).fetchall()
+        items = fetchall(conn, """SELECT pi.*, pr.nombre as producto_nombre
+            FROM pedido_items pi LEFT JOIN productos pr ON pr.id = pi.producto_id
+            WHERE pi.pedido_id=%s""", (p['id'],))
         d['items'] = rows_to_list(items)
-        # Calculate saldo from cuotas if they exist
-        cuotas = conn.execute("SELECT * FROM pedido_cuotas WHERE pedido_id=? ORDER BY numero_cuota", (p['id'],)).fetchall()
+        cuotas = fetchall(conn, "SELECT * FROM pedido_cuotas WHERE pedido_id=%s ORDER BY numero_cuota", (p['id'],))
         if cuotas:
             total_pagado = sum(c['monto_pagado'] for c in cuotas)
             d['saldo'] = (d['total'] or 0) - total_pagado
@@ -400,9 +412,8 @@ def api_pedidos():
         else:
             d['saldo'] = (d['total'] or 0) - (d['adelanto'] or 0)
             d['cuotas_data'] = []
-        # Get client data if linked
         if d.get('cliente_id'):
-            cli = conn.execute("SELECT * FROM clientes WHERE id=?", (d['cliente_id'],)).fetchone()
+            cli = fetchone(conn, "SELECT * FROM clientes WHERE id=%s", (d['cliente_id'],))
             if cli: d['cliente_info'] = dict(cli)
         result.append(d)
     conn.close()
@@ -411,36 +422,35 @@ def api_pedidos():
 @app.route('/api/pedidos', methods=['POST'])
 def api_pedidos_post():
     d = request.json; conn = get_db()
-    ultimo = conn.execute("SELECT numero FROM pedidos ORDER BY id DESC LIMIT 1").fetchone()
+    ultimo = fetchone(conn, "SELECT numero FROM pedidos ORDER BY id DESC LIMIT 1")
     if ultimo and ultimo['numero']:
         try: n = int(ultimo['numero'].replace('P-','')) + 1
         except: n = 1
     else: n = 1
     numero = f"P-{n:04d}"
-    cur = conn.execute("""INSERT INTO pedidos (numero,fecha,cliente_id,cliente,telefono,total,adelanto,cuotas,fecha_entrega,estado,canal,modelo_seguir,notas)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+    pid = insert_returning_id(conn, """
+        INSERT INTO pedidos (numero,fecha,cliente_id,cliente,telefono,total,adelanto,cuotas,
+            fecha_entrega,estado,canal,modelo_seguir,notas)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (numero, d['fecha'], d.get('cliente_id'), d.get('cliente',''), d.get('telefono',''),
          float(d.get('total',0)), float(d.get('adelanto',0)), int(d.get('cuotas',1)),
          d.get('fecha_entrega',''), d.get('estado','Pendiente'),
          d.get('canal',''), d.get('modelo_seguir',''), d.get('notas','')))
-    pid = cur.lastrowid
     for item in d.get('items', []):
-        conn.execute("INSERT INTO pedido_items (pedido_id,producto_id,descripcion,cantidad,precio_unit) VALUES (?,?,?,?,?)",
+        execute(conn, "INSERT INTO pedido_items (pedido_id,producto_id,descripcion,cantidad,precio_unit) VALUES (%s,%s,%s,%s,%s)",
             (pid, item.get('producto_id'), item.get('descripcion',''),
              float(item.get('cantidad',1)), float(item.get('precio_unit',0))))
-    # Create cuotas
-    num_cuotas = int(d.get('cuotas', 1))
-    total = float(d.get('total', 0))
+    num_cuotas = int(d.get('cuotas', 1)); total = float(d.get('total', 0))
     if num_cuotas > 1:
         monto_cuota = round(total / num_cuotas)
         for i in range(1, num_cuotas + 1):
-            conn.execute("INSERT INTO pedido_cuotas (pedido_id,numero_cuota,monto_esperado) VALUES (?,?,?)",
+            execute(conn, "INSERT INTO pedido_cuotas (pedido_id,numero_cuota,monto_esperado) VALUES (%s,%s,%s)",
                 (pid, i, monto_cuota))
     elif num_cuotas == 1:
-        conn.execute("INSERT INTO pedido_cuotas (pedido_id,numero_cuota,monto_esperado,monto_pagado,pagada) VALUES (?,?,?,?,?)",
-            (pid, 1, total, float(d.get('adelanto',0)), 1 if float(d.get('adelanto',0)) >= total else 0))
-    # Record initial state
-    conn.execute("INSERT INTO pedido_estado_historial (pedido_id,estado,fecha_hora) VALUES (?,?,?)",
+        adelanto = float(d.get('adelanto',0))
+        execute(conn, "INSERT INTO pedido_cuotas (pedido_id,numero_cuota,monto_esperado,monto_pagado,pagada) VALUES (%s,%s,%s,%s,%s)",
+            (pid, 1, total, adelanto, 1 if adelanto >= total else 0))
+    execute(conn, "INSERT INTO pedido_estado_historial (pedido_id,estado,fecha_hora) VALUES (%s,%s,%s)",
         (pid, d.get('estado','Pendiente'), now_iso()))
     conn.commit(); conn.close()
     return jsonify({'ok': True, 'numero': numero, 'id': pid})
@@ -448,19 +458,19 @@ def api_pedidos_post():
 @app.route('/api/pedidos/<int:pid>/consumos_registrados')
 def api_pedido_consumos_check(pid):
     conn = get_db()
-    p = conn.execute("SELECT numero FROM pedidos WHERE id=?", (pid,)).fetchone()
+    p = fetchone(conn, "SELECT numero FROM pedidos WHERE id=%s", (pid,))
     if not p: conn.close(); return jsonify({'registrados': False})
-    count = conn.execute("SELECT COUNT(*) FROM consumos WHERE pedido_ref=? AND tipo='VENTA'", (p['numero'],)).fetchone()[0]
+    count = fetchone(conn, "SELECT COUNT(*) as total FROM consumos WHERE pedido_ref=%s AND tipo='VENTA'", (p['numero'],))['total']
     conn.close()
     return jsonify({'registrados': count > 0, 'cantidad': count})
 
 @app.route('/api/pedidos/<int:pid>', methods=['PUT'])
 def api_pedidos_put(pid):
     d = request.json; conn = get_db()
-    old = conn.execute("SELECT estado FROM pedidos WHERE id=?", (pid,)).fetchone()
-    conn.execute("""UPDATE pedidos SET cliente=?,cliente_id=?,telefono=?,total=?,adelanto=?,cuotas=?,
-        fecha_entrega=?,estado=?,canal=?,modelo_seguir=?,notas=?,
-        solicita_factura=?,factura_razon=?,factura_ruc=?,factura_email=?,factura_tel=?,factura_dir=? WHERE id=?""",
+    old = fetchone(conn, "SELECT estado FROM pedidos WHERE id=%s", (pid,))
+    execute(conn, """UPDATE pedidos SET cliente=%s,cliente_id=%s,telefono=%s,total=%s,adelanto=%s,cuotas=%s,
+        fecha_entrega=%s,estado=%s,canal=%s,modelo_seguir=%s,notas=%s,
+        solicita_factura=%s,factura_razon=%s,factura_ruc=%s,factura_email=%s,factura_tel=%s,factura_dir=%s WHERE id=%s""",
         (d.get('cliente',''), d.get('cliente_id'), d.get('telefono',''),
          float(d.get('total',0)), float(d.get('adelanto',0)), int(d.get('cuotas',1)),
          d.get('fecha_entrega',''), d.get('estado','Pendiente'),
@@ -468,10 +478,9 @@ def api_pedidos_put(pid):
          int(d.get('solicita_factura',0)), d.get('factura_razon',''),
          d.get('factura_ruc',''), d.get('factura_email',''),
          d.get('factura_tel',''), d.get('factura_dir',''), pid))
-    # Record state change
     new_estado = d.get('estado','Pendiente')
     if old and old['estado'] != new_estado:
-        conn.execute("INSERT INTO pedido_estado_historial (pedido_id,estado,fecha_hora) VALUES (?,?,?)",
+        execute(conn, "INSERT INTO pedido_estado_historial (pedido_id,estado,fecha_hora) VALUES (%s,%s,%s)",
             (pid, new_estado, now_iso()))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
@@ -479,7 +488,7 @@ def api_pedidos_put(pid):
 @app.route('/api/pedidos/<int:pid>/cuotas', methods=['GET'])
 def api_pedido_cuotas(pid):
     conn = get_db()
-    rows = conn.execute("SELECT * FROM pedido_cuotas WHERE pedido_id=? ORDER BY numero_cuota", (pid,)).fetchall()
+    rows = fetchall(conn, "SELECT * FROM pedido_cuotas WHERE pedido_id=%s ORDER BY numero_cuota", (pid,))
     conn.close()
     return jsonify(rows_to_list(rows))
 
@@ -487,34 +496,32 @@ def api_pedido_cuotas(pid):
 def api_pedido_cuotas_put(pid):
     data = request.json; conn = get_db()
     for c in data:
-        conn.execute("UPDATE pedido_cuotas SET monto_pagado=?,pagada=?,fecha_pago=? WHERE id=?",
+        execute(conn, "UPDATE pedido_cuotas SET monto_pagado=%s,pagada=%s,fecha_pago=%s WHERE id=%s",
             (float(c.get('monto_pagado',0)), int(c.get('pagada',0)), c.get('fecha_pago',''), c['id']))
-    # Recalc adelanto (total paid)
     total_paid = sum(float(c.get('monto_pagado',0)) for c in data)
-    conn.execute("UPDATE pedidos SET adelanto=? WHERE id=?", (total_paid, pid))
+    execute(conn, "UPDATE pedidos SET adelanto=%s WHERE id=%s", (total_paid, pid))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
 @app.route('/api/pedidos/<int:pid>/historial')
 def api_pedido_historial(pid):
     conn = get_db()
-    rows = conn.execute("SELECT * FROM pedido_estado_historial WHERE pedido_id=? ORDER BY fecha_hora", (pid,)).fetchall()
+    rows = fetchall(conn, "SELECT * FROM pedido_estado_historial WHERE pedido_id=%s ORDER BY fecha_hora", (pid,))
     conn.close()
     return jsonify(rows_to_list(rows))
 
 @app.route('/api/pedidos/<int:pid>/reingreso', methods=['POST'])
 def api_pedido_reingreso(pid):
     d = request.json; conn = get_db()
-    p = conn.execute("SELECT numero, total FROM pedidos WHERE id=?", (pid,)).fetchone()
+    p = fetchone(conn, "SELECT numero, total FROM pedidos WHERE id=%s", (pid,))
     if not p: conn.close(); return jsonify({'error': 'Pedido no encontrado'}), 404
-    conn.execute("""INSERT INTO stock_reingreso (pedido_id,pedido_numero,producto_id,descripcion,cantidad,valor_unit,motivo,fecha)
-        VALUES (?,?,?,?,?,?,?,?)""",
+    execute(conn, """INSERT INTO stock_reingreso (pedido_id,pedido_numero,producto_id,descripcion,cantidad,valor_unit,motivo,fecha)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
         (pid, p['numero'], d.get('producto_id'), d.get('descripcion',''),
          float(d.get('cantidad',1)), float(d.get('valor_unit',0)),
          d.get('motivo',''), date.today().isoformat()))
-    # Update pedido estado
-    conn.execute("UPDATE pedidos SET estado='Reingreso' WHERE id=?", (pid,))
-    conn.execute("INSERT INTO pedido_estado_historial (pedido_id,estado,fecha_hora) VALUES (?,?,?)",
+    execute(conn, "UPDATE pedidos SET estado='Reingreso' WHERE id=%s", (pid,))
+    execute(conn, "INSERT INTO pedido_estado_historial (pedido_id,estado,fecha_hora) VALUES (%s,%s,%s)",
         (pid, 'Reingreso', now_iso()))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
@@ -523,17 +530,17 @@ def api_pedido_reingreso(pid):
 @app.route('/api/stock_reingreso', methods=['GET'])
 def api_stock_reingreso():
     conn = get_db()
-    rows = conn.execute("""SELECT s.*, p.nombre as producto_nombre 
-        FROM stock_reingreso s LEFT JOIN productos p ON p.id = s.producto_id 
-        ORDER BY s.fecha DESC""").fetchall()
+    rows = fetchall(conn, """SELECT s.*, p.nombre as producto_nombre
+        FROM stock_reingreso s LEFT JOIN productos p ON p.id = s.producto_id
+        ORDER BY s.fecha DESC""")
     conn.close()
     return jsonify(rows_to_list(rows))
 
 @app.route('/api/stock_reingreso', methods=['POST'])
 def api_stock_reingreso_post():
     d = request.json; conn = get_db()
-    conn.execute("""INSERT INTO stock_reingreso (pedido_id,pedido_numero,producto_id,descripcion,cantidad,valor_unit,motivo,fecha,estado)
-        VALUES (?,?,?,?,?,?,?,?,?)""",
+    execute(conn, """INSERT INTO stock_reingreso (pedido_id,pedido_numero,producto_id,descripcion,cantidad,valor_unit,motivo,fecha,estado)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (None, None, d.get('producto_id'), d.get('descripcion',''),
          float(d.get('cantidad',1)), float(d.get('valor_unit',0)),
          d.get('motivo','Producción para stock'), date.today().isoformat(), 'Disponible'))
@@ -543,19 +550,18 @@ def api_stock_reingreso_post():
 @app.route('/api/stock_reingreso/<int:sid>', methods=['PUT'])
 def api_stock_reingreso_put(sid):
     d = request.json; conn = get_db()
-    conn.execute("UPDATE stock_reingreso SET estado=? WHERE id=?", (d.get('estado','Disponible'), sid))
+    execute(conn, "UPDATE stock_reingreso SET estado=%s WHERE id=%s", (d.get('estado','Disponible'), sid))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
 @app.route('/api/stock_reingreso/<int:sid>/salida', methods=['POST'])
 def api_stock_salida(sid):
     d = request.json; conn = get_db()
-    item = conn.execute("SELECT * FROM stock_reingreso WHERE id=?", (sid,)).fetchone()
+    item = fetchone(conn, "SELECT * FROM stock_reingreso WHERE id=%s", (sid,))
     if not item: conn.close(); return jsonify({'error': 'No encontrado'}), 404
-    # Determine prefix: S- for stock-produced, P- for reingreso from pedido
     is_stock_new = item['pedido_id'] is None
     prefix = 'S' if is_stock_new else 'P'
-    ultimo = conn.execute(f"SELECT numero FROM pedidos WHERE numero LIKE '{prefix}-%' ORDER BY id DESC LIMIT 1").fetchone()
+    ultimo = fetchone(conn, f"SELECT numero FROM pedidos WHERE numero LIKE '{prefix}-%' ORDER BY id DESC LIMIT 1")
     if ultimo and ultimo['numero']:
         try: n = int(ultimo['numero'].replace(f'{prefix}-','')) + 1
         except: n = 1
@@ -563,17 +569,16 @@ def api_stock_salida(sid):
     numero = f"{prefix}-{n:04d}"
     monto = float(d.get('monto', item['valor_unit'] * item['cantidad']))
     estado_pedido = 'Entregado (R)' if not is_stock_new else 'Entregado'
-    cur = conn.execute("""INSERT INTO pedidos (numero,fecha,cliente_id,cliente,telefono,total,adelanto,cuotas,estado,canal,notas)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+    pid = insert_returning_id(conn, """
+        INSERT INTO pedidos (numero,fecha,cliente_id,cliente,telefono,total,adelanto,cuotas,estado,canal,notas)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (numero, date.today().isoformat(), d.get('cliente_id'), d.get('cliente',''),
-         d.get('telefono',''), monto, monto, 1, estado_pedido, 'Stock',
-         f"Salida de stock #{sid}"))
-    pid = cur.lastrowid
-    conn.execute("INSERT INTO pedido_items (pedido_id,producto_id,descripcion,cantidad,precio_unit) VALUES (?,?,?,?,?)",
+         d.get('telefono',''), monto, monto, 1, estado_pedido, 'Stock', f"Salida de stock #{sid}"))
+    execute(conn, "INSERT INTO pedido_items (pedido_id,producto_id,descripcion,cantidad,precio_unit) VALUES (%s,%s,%s,%s,%s)",
         (pid, item['producto_id'], item['descripcion'] or '', item['cantidad'], float(d.get('monto', item['valor_unit']))))
-    conn.execute("INSERT INTO pedido_estado_historial (pedido_id,estado,fecha_hora) VALUES (?,?,?)",
+    execute(conn, "INSERT INTO pedido_estado_historial (pedido_id,estado,fecha_hora) VALUES (%s,%s,%s)",
         (pid, estado_pedido, now_iso()))
-    conn.execute("UPDATE stock_reingreso SET estado='Vendido' WHERE id=?", (sid,))
+    execute(conn, "UPDATE stock_reingreso SET estado='Vendido' WHERE id=%s", (sid,))
     conn.commit(); conn.close()
     return jsonify({'ok': True, 'numero': numero})
 
@@ -583,16 +588,17 @@ def api_gastos():
     conn = get_db()
     mes = request.args.get('mes')
     if mes:
-        rows = conn.execute("SELECT * FROM gastos WHERE strftime('%Y-%m',fecha)=? ORDER BY fecha DESC", (mes,)).fetchall()
+        rows = fetchall(conn, "SELECT * FROM gastos WHERE TO_CHAR(fecha,'YYYY-MM')=%s ORDER BY fecha DESC", (mes,))
     else:
-        rows = conn.execute("SELECT * FROM gastos ORDER BY fecha DESC LIMIT 200").fetchall()
+        rows = fetchall(conn, "SELECT * FROM gastos ORDER BY fecha DESC LIMIT 200")
     conn.close()
     return jsonify(rows_to_list(rows))
 
 @app.route('/api/gastos', methods=['POST'])
 def api_gastos_post():
     d = request.json; conn = get_db()
-    conn.execute("INSERT INTO gastos (fecha,categoria,descripcion,proveedor,comprobante,forma_pago,monto,tipo_recurrencia,notas) VALUES (?,?,?,?,?,?,?,?,?)",
+    execute(conn, """INSERT INTO gastos (fecha,categoria,descripcion,proveedor,comprobante,forma_pago,monto,tipo_recurrencia,notas)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (d['fecha'], d['categoria'], d.get('descripcion',''), d.get('proveedor',''),
          d.get('comprobante',''), d.get('forma_pago',''), float(d.get('monto',0)),
          d.get('tipo_recurrencia','Único'), d.get('notas','')))
@@ -602,7 +608,8 @@ def api_gastos_post():
 @app.route('/api/gastos/<int:gid>', methods=['PUT'])
 def api_gastos_put(gid):
     d = request.json; conn = get_db()
-    conn.execute("""UPDATE gastos SET fecha=?,categoria=?,descripcion=?,proveedor=?,comprobante=?,forma_pago=?,monto=?,tipo_recurrencia=?,notas=? WHERE id=?""",
+    execute(conn, """UPDATE gastos SET fecha=%s,categoria=%s,descripcion=%s,proveedor=%s,comprobante=%s,
+        forma_pago=%s,monto=%s,tipo_recurrencia=%s,notas=%s WHERE id=%s""",
         (d['fecha'], d['categoria'], d.get('descripcion',''), d.get('proveedor',''),
          d.get('comprobante',''), d.get('forma_pago',''), float(d.get('monto',0)),
          d.get('tipo_recurrencia','Único'), d.get('notas',''), gid))
@@ -612,7 +619,7 @@ def api_gastos_put(gid):
 @app.route('/api/gastos/<int:gid>', methods=['DELETE'])
 def api_gastos_del(gid):
     conn = get_db()
-    conn.execute("DELETE FROM gastos WHERE id=?", (gid,))
+    execute(conn, "DELETE FROM gastos WHERE id=%s", (gid,))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
@@ -620,39 +627,38 @@ def api_gastos_del(gid):
 @app.route('/api/marketing', methods=['GET'])
 def api_marketing():
     conn = get_db()
-    rows = conn.execute("SELECT * FROM marketing ORDER BY mes DESC").fetchall()
+    rows = fetchall(conn, "SELECT * FROM marketing ORDER BY mes DESC")
     conn.close()
     return jsonify(rows_to_list(rows))
 
 @app.route('/api/marketing', methods=['POST'])
 def api_marketing_post():
     d = request.json; conn = get_db()
-    conn.execute("""INSERT INTO marketing (mes,plataforma,tipo_campana,presupuesto,gasto_real,alcance,interacciones,pedidos_generados,venta_generada,notas)
-        VALUES (?,?,?,?,?,?,?,?,?,?)""",
+    execute(conn, """INSERT INTO marketing (mes,plataforma,tipo_campana,presupuesto,gasto_real,alcance,interacciones,pedidos_generados,venta_generada,notas)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (d['mes'], d['plataforma'], d.get('tipo_campana',''),
          float(d.get('presupuesto',0)), float(d.get('gasto_real',0)),
          int(d.get('alcance',0)), int(d.get('interacciones',0)),
-         int(d.get('pedidos_generados',0)), float(d.get('venta_generada',0)),
-         d.get('notas','')))
+         int(d.get('pedidos_generados',0)), float(d.get('venta_generada',0)), d.get('notas','')))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
 @app.route('/api/marketing/<int:mid>', methods=['PUT'])
 def api_marketing_put(mid):
     d = request.json; conn = get_db()
-    conn.execute("""UPDATE marketing SET mes=?,plataforma=?,tipo_campana=?,presupuesto=?,gasto_real=?,alcance=?,interacciones=?,pedidos_generados=?,venta_generada=?,notas=? WHERE id=?""",
+    execute(conn, """UPDATE marketing SET mes=%s,plataforma=%s,tipo_campana=%s,presupuesto=%s,gasto_real=%s,
+        alcance=%s,interacciones=%s,pedidos_generados=%s,venta_generada=%s,notas=%s WHERE id=%s""",
         (d['mes'], d['plataforma'], d.get('tipo_campana',''),
          float(d.get('presupuesto',0)), float(d.get('gasto_real',0)),
          int(d.get('alcance',0)), int(d.get('interacciones',0)),
-         int(d.get('pedidos_generados',0)), float(d.get('venta_generada',0)),
-         d.get('notas',''), mid))
+         int(d.get('pedidos_generados',0)), float(d.get('venta_generada',0)), d.get('notas',''), mid))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
 @app.route('/api/marketing/<int:mid>', methods=['DELETE'])
 def api_marketing_del(mid):
     conn = get_db()
-    conn.execute("DELETE FROM marketing WHERE id=?", (mid,))
+    execute(conn, "DELETE FROM marketing WHERE id=%s", (mid,))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
@@ -660,10 +666,10 @@ def api_marketing_del(mid):
 @app.route('/api/categorias', methods=['GET'])
 def api_categorias():
     conn = get_db()
-    from_insumos = [r[0] for r in conn.execute("SELECT DISTINCT categoria FROM insumos ORDER BY categoria").fetchall()]
-    from_productos = [r[0] for r in conn.execute("SELECT DISTINCT categoria FROM productos ORDER BY categoria").fetchall()]
+    from_insumos  = [r['categoria'] for r in fetchall(conn, "SELECT DISTINCT categoria FROM insumos ORDER BY categoria")]
+    from_productos = [r['categoria'] for r in fetchall(conn, "SELECT DISTINCT categoria FROM productos ORDER BY categoria")]
     custom = []
-    try: custom = [r[0] for r in conn.execute("SELECT DISTINCT valor FROM categorias ORDER BY orden").fetchall()]
+    try: custom = [r['valor'] for r in fetchall(conn, "SELECT DISTINCT valor FROM categorias ORDER BY orden")]
     except: pass
     all_cats = list(dict.fromkeys(from_insumos + from_productos + custom))
     conn.close()
@@ -673,8 +679,9 @@ def api_categorias():
 def api_categorias_post():
     d = request.json; conn = get_db()
     try:
-        conn.execute("CREATE TABLE IF NOT EXISTS categorias (id INTEGER PRIMARY KEY AUTOINCREMENT, valor TEXT UNIQUE, orden INTEGER DEFAULT 0)")
-        conn.execute("INSERT OR IGNORE INTO categorias (valor, orden) VALUES (?,?)", (d['valor'], 999))
+        execute(conn, """CREATE TABLE IF NOT EXISTS categorias
+            (id SERIAL PRIMARY KEY, valor TEXT UNIQUE, orden INTEGER DEFAULT 0)""")
+        execute(conn, "INSERT INTO categorias (valor, orden) VALUES (%s,%s) ON CONFLICT (valor) DO NOTHING", (d['valor'], 999))
         conn.commit()
     except: pass
     conn.close()
@@ -684,7 +691,7 @@ def api_categorias_post():
 @app.route('/api/parametros', methods=['GET'])
 def api_parametros():
     conn = get_db()
-    rows = conn.execute("SELECT * FROM parametros").fetchall()
+    rows = fetchall(conn, "SELECT * FROM parametros")
     conn.close()
     return jsonify({r['clave']: r['valor'] for r in rows})
 
@@ -692,7 +699,8 @@ def api_parametros():
 def api_parametros_put():
     d = request.json; conn = get_db()
     for k, v in d.items():
-        conn.execute("INSERT OR REPLACE INTO parametros VALUES (?,?)", (k, str(v)))
+        execute(conn, """INSERT INTO parametros (clave,valor) VALUES (%s,%s)
+            ON CONFLICT (clave) DO UPDATE SET valor=EXCLUDED.valor""", (k, str(v)))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
@@ -700,7 +708,7 @@ def api_parametros_put():
 @app.route('/api/prestamos', methods=['GET'])
 def api_prestamos():
     conn = get_db()
-    rows = conn.execute("SELECT * FROM prestamos WHERE activo=1 ORDER BY fecha_inicio DESC").fetchall()
+    rows = fetchall(conn, "SELECT * FROM prestamos WHERE activo=1 ORDER BY fecha_inicio DESC")
     result = []
     for p in rows:
         d = dict(p)
@@ -718,8 +726,9 @@ def api_prestamos_post():
     d = request.json; conn = get_db()
     monto = float(d.get('monto_total', 0)); cuotas = int(d.get('cuotas', 12))
     cuota_m = round(monto / cuotas) if cuotas else 0
-    conn.execute("""INSERT INTO prestamos (descripcion,monto_total,monto_adjudicado,cuotas,cuotas_pagadas,plazo_meses,fecha_inicio,fecha_fin,cuota_mensual,entidad,notas)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+    execute(conn, """INSERT INTO prestamos
+        (descripcion,monto_total,monto_adjudicado,cuotas,cuotas_pagadas,plazo_meses,fecha_inicio,fecha_fin,cuota_mensual,entidad,notas)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (d['descripcion'], monto, float(d.get('monto_adjudicado', monto)),
          cuotas, int(d.get('cuotas_pagadas', 0)), int(d.get('plazo_meses', cuotas)),
          d.get('fecha_inicio',''), d.get('fecha_fin',''),
@@ -730,8 +739,8 @@ def api_prestamos_post():
 @app.route('/api/prestamos/<int:pid>', methods=['PUT'])
 def api_prestamos_put(pid):
     d = request.json; conn = get_db()
-    conn.execute("""UPDATE prestamos SET descripcion=?,monto_total=?,monto_adjudicado=?,cuotas=?,cuotas_pagadas=?,
-        plazo_meses=?,fecha_inicio=?,fecha_fin=?,cuota_mensual=?,entidad=?,notas=? WHERE id=?""",
+    execute(conn, """UPDATE prestamos SET descripcion=%s,monto_total=%s,monto_adjudicado=%s,cuotas=%s,cuotas_pagadas=%s,
+        plazo_meses=%s,fecha_inicio=%s,fecha_fin=%s,cuota_mensual=%s,entidad=%s,notas=%s WHERE id=%s""",
         (d['descripcion'], float(d.get('monto_total',0)), float(d.get('monto_adjudicado',0)),
          int(d.get('cuotas',12)), int(d.get('cuotas_pagadas',0)),
          int(d.get('plazo_meses',12)), d.get('fecha_inicio',''), d.get('fecha_fin',''),
@@ -743,22 +752,22 @@ def api_prestamos_put(pid):
 def api_prestamos_cuotas_patch(pid):
     d = request.json; conn = get_db()
     delta = int(d.get('delta', 0))
-    conn.execute("UPDATE prestamos SET cuotas_pagadas = MAX(0, MIN(cuotas, cuotas_pagadas + ?)) WHERE id=?", (delta, pid))
+    execute(conn, "UPDATE prestamos SET cuotas_pagadas = GREATEST(0, LEAST(cuotas, cuotas_pagadas + %s)) WHERE id=%s", (delta, pid))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
 @app.route('/api/prestamos/<int:pid>', methods=['DELETE'])
 def api_prestamos_del(pid):
     conn = get_db()
-    conn.execute("UPDATE prestamos SET activo=0 WHERE id=?", (pid,))
+    execute(conn, "UPDATE prestamos SET activo=0 WHERE id=%s", (pid,))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
-# ── EQUIPOS (now labeled "Inventario" in UI) ─────────────────────────────────
+# ── EQUIPOS ──────────────────────────────────────────────────────────────────
 @app.route('/api/equipos', methods=['GET'])
 def api_equipos():
     conn = get_db()
-    equipos = conn.execute("SELECT * FROM equipos ORDER BY activo DESC, nombre").fetchall()
+    equipos = fetchall(conn, "SELECT * FROM equipos ORDER BY activo DESC, nombre")
     result = []
     for e in equipos:
         d = dict(e)
@@ -766,7 +775,7 @@ def api_equipos():
         d['amort_mensual'] = round(amort)
         if e['fecha_compra']:
             try:
-                fc = datetime.strptime(e['fecha_compra'], '%Y-%m-%d')
+                fc = datetime.strptime(str(e['fecha_compra']), '%Y-%m-%d')
                 meses = (date.today().year - fc.year)*12 + (date.today().month - fc.month)
                 d['meses_transcurridos'] = meses
                 d['valor_actual'] = max(e['valor_residual'], e['costo_total'] - amort * meses)
@@ -779,7 +788,7 @@ def api_equipos():
 @app.route('/api/equipos', methods=['POST'])
 def api_equipos_post():
     d = request.json; conn = get_db()
-    conn.execute("INSERT INTO equipos (nombre,cantidad,fecha_compra,costo_total,vida_util_meses,valor_residual) VALUES (?,?,?,?,?,?)",
+    execute(conn, "INSERT INTO equipos (nombre,cantidad,fecha_compra,costo_total,vida_util_meses,valor_residual) VALUES (%s,%s,%s,%s,%s,%s)",
         (d['nombre'], int(d.get('cantidad',1)), d.get('fecha_compra',''),
          float(d.get('costo_total',0)), int(d.get('vida_util_meses',48)), float(d.get('valor_residual',0))))
     conn.commit(); conn.close()
@@ -788,7 +797,7 @@ def api_equipos_post():
 @app.route('/api/equipos/<int:eid>', methods=['PUT'])
 def api_equipos_put(eid):
     d = request.json; conn = get_db()
-    conn.execute("UPDATE equipos SET nombre=?,cantidad=?,fecha_compra=?,costo_total=?,vida_util_meses=?,valor_residual=? WHERE id=?",
+    execute(conn, "UPDATE equipos SET nombre=%s,cantidad=%s,fecha_compra=%s,costo_total=%s,vida_util_meses=%s,valor_residual=%s WHERE id=%s",
         (d['nombre'], int(d.get('cantidad',1)), d.get('fecha_compra',''),
          float(d.get('costo_total',0)), int(d.get('vida_util_meses',48)),
          float(d.get('valor_residual',0)), eid))
@@ -798,36 +807,33 @@ def api_equipos_put(eid):
 @app.route('/api/equipos/<int:eid>', methods=['DELETE'])
 def api_equipos_delete(eid):
     conn = get_db()
-    conn.execute("DELETE FROM equipos WHERE id=?", (eid,))
+    execute(conn, "DELETE FROM equipos WHERE id=%s", (eid,))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
 @app.route('/api/equipos/<int:eid>/toggle', methods=['PATCH'])
 def api_equipos_toggle(eid):
     conn = get_db()
-    conn.execute("UPDATE equipos SET activo = CASE WHEN activo=1 THEN 0 ELSE 1 END WHERE id=?", (eid,))
+    execute(conn, "UPDATE equipos SET activo = CASE WHEN activo=1 THEN 0 ELSE 1 END WHERE id=%s", (eid,))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
 # ── EXPORT CSV ────────────────────────────────────────────────────────────────
 @app.route('/api/export/<string:tabla>')
 def api_export(tabla):
-    import csv, io
     ALLOWED = {'insumos','pedidos','gastos','consumos','marketing','equipos','clientes','stock_reingreso'}
     if tabla not in ALLOWED:
         return jsonify({'error': 'tabla no permitida'}), 400
     conn = get_db()
-    rows = conn.execute(f"SELECT * FROM {tabla}").fetchall()
+    rows = fetchall(conn, f"SELECT * FROM {tabla}")
     conn.close()
     if not rows:
-        from flask import Response
         return Response('\ufeffSin datos\n', mimetype='text/csv; charset=utf-8',
                         headers={'Content-Disposition': f'attachment; filename=pixel90_{tabla}.csv'})
     output = io.StringIO()
     w = csv.writer(output)
     w.writerow(rows[0].keys())
-    w.writerows([list(r) for r in rows])
-    from flask import Response
+    w.writerows([list(r.values()) for r in rows])
     return Response('\ufeff' + output.getvalue(), mimetype='text/csv; charset=utf-8',
                     headers={'Content-Disposition': f'attachment; filename=pixel90_{tabla}.csv'})
 
@@ -838,64 +844,51 @@ def api_balance(year):
     result = []
     for m in range(1, 13):
         ini = f"{year}-{m:02d}-01"; fin = f"{year}-{m:02d}-{monthrange(year, m)[1]}"
-        ventas = conn.execute("SELECT COALESCE(SUM(pi.cantidad * pi.precio_unit),0) FROM pedidos p JOIN pedido_items pi ON pi.pedido_id=p.id WHERE p.fecha BETWEEN ? AND ? AND p.estado != 'Cancelado'", (ini,fin)).fetchone()[0]
-        gastos = conn.execute("SELECT COALESCE(SUM(monto),0) FROM gastos WHERE fecha BETWEEN ? AND ?", (ini,fin)).fetchone()[0]
+        ventas = fetchone(conn, """SELECT COALESCE(SUM(pi.cantidad * pi.precio_unit),0) as total
+            FROM pedidos p JOIN pedido_items pi ON pi.pedido_id=p.id
+            WHERE p.fecha BETWEEN %s AND %s AND p.estado != 'Cancelado'""", (ini,fin))['total']
+        gastos = fetchone(conn, "SELECT COALESCE(SUM(monto),0) as total FROM gastos WHERE fecha BETWEEN %s AND %s", (ini,fin))['total']
         result.append({'mes': m, 'ventas': ventas, 'gastos': gastos, 'ganancia': ventas - gastos})
     conn.close()
     return jsonify(result)
 
-# ── BASA ───────────────────────────────────────────────────────────────────
-
+# ── SQL ADMIN ─────────────────────────────────────────────────────────────────
 @app.route('/api/sql', methods=['POST'])
 def ejecutar_sql():
     clave = request.headers.get('x-api-key')
-
-    # 🔐 cambiá esto por una clave tuya
     if clave != "ueTJ{z410]Z^":
         return jsonify({'error': 'No autorizado'}), 403
-
     data = request.json
     query = data.get('query')
-
     if not query:
         return jsonify({'error': 'Query vacía'}), 400
-
     conn = get_db()
     try:
-        cur = conn.execute(query)
-
-        # Si es SELECT → devolver datos
         if query.strip().lower().startswith("select"):
-            rows = [dict(r) for r in cur.fetchall()]
+            rows = fetchall(conn, query)
             conn.close()
-            return jsonify(rows)
-
-        # Si es INSERT/UPDATE/DELETE
-        conn.commit()
-        conn.close()
+            return jsonify(rows_to_list(rows))
+        execute(conn, query)
+        conn.commit(); conn.close()
         return jsonify({'ok': True})
-
     except Exception as e:
         conn.close()
         return jsonify({'error': str(e)})
 
-# ── BASE TEST ───────────────────────────────────────────────────────────────────
+# ── TEST DB ───────────────────────────────────────────────────────────────────
 @app.route('/test-db')
 def test_db():
     try:
-        from db import get_db
         conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT 1")
-        result = cur.fetchone()[0]  # 👈 esto es la clave
+        result = fetchone(conn, "SELECT 1 as result")['result']
         conn.close()
-        return {"ok": True, "result": result}
+        return jsonify({"ok": True, "result": result})
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return jsonify({"ok": False, "error": str(e)})
 
 if __name__ == '__main__':
     init_db()
-    print("\n  ██████╗ ██╗██╗  ██╗███████╗██╗      █████╗  ██████╗ ")
+    print("\n ██████╗ ██╗██╗  ██╗███████╗██╗      █████╗  ██████╗ ")
     print("  ██╔══██╗██║╚██╗██╔╝██╔════╝██║     ██╔══██╗██╔═████╗")
     print("  ██████╔╝██║ ╚███╔╝ █████╗  ██║     ╚██████║██║██╔██║")
     print("  ██╔═══╝ ██║ ██╔██╗ ██╔══╝  ██║      ╚═══██║████╔╝██║")
