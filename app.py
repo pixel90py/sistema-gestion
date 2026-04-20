@@ -796,6 +796,17 @@ def ejecutar_sql():
         conn.close()
         return jsonify({'error': str(e)})
 
+# ── BASE TEST ───────────────────────────────────────────────────────────────────
+@app.route('/test-db')
+def test_db():
+    from db import get_db
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT 1")
+    result = cur.fetchone()
+    conn.close()
+    return {"ok": True, "result": result}
+
 if __name__ == '__main__':
     init_db()
     print("\n  ██████╗ ██╗██╗  ██╗███████╗██╗      █████╗  ██████╗ ")
