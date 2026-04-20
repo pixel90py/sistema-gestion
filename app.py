@@ -8,6 +8,22 @@ import psycopg2.extras
 app = Flask(__name__)
 app.config['JSON_ENSURE_ASCII'] = False
 
+# ── manejador de errores global ───────────────────────────────────────────────
+@app.errorhandler(Exception)
+def handle_error(e):
+    import psycopg2.errors as pg
+    if isinstance(e, pg.UniqueViolation):
+        return jsonify({'error': 'Ya existe un registro con ese nombre o dato único'}), 400
+    if isinstance(e, pg.NotNullViolation):
+        return jsonify({'error': 'Falta un campo obligatorio'}), 400
+    if isinstance(e, pg.ForeignKeyViolation):
+        return jsonify({'error': 'El registro referenciado no existe'}), 400
+    if isinstance(e, pg.CheckViolation):
+        return jsonify({'error': 'El valor ingresado no cumple las restricciones'}), 400
+    if isinstance(e, pg.NumericValueOutOfRange):
+        return jsonify({'error': 'El valor numérico está fuera de rango'}), 400
+    return jsonify({'error': str(e)}), 500
+
 # ── helpers ──────────────────────────────────────────────────────────────────
 def get_cursor(conn):
     return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -28,8 +44,12 @@ def fetchone(conn, sql, params=()):
 
 def execute(conn, sql, params=()):
     cur = get_cursor(conn)
-    cur.execute(sql, params)
-    # lastrowid equivalent in psycopg2
+    try:
+        cur.execute(sql, params)
+    except Exception:
+        conn.rollback()
+        cur.close()
+        raise
     lastrow = None
     try:
         lastrow = cur.fetchone()
@@ -886,11 +906,9 @@ def test_db():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 
-with app.app_context():
-    init_db()
 if __name__ == '__main__':
     init_db()
-    print("\n ██████╗ ██╗██╗  ██╗███████╗██╗      █████╗  ██████╗ ")
+    print("\n  ██████╗ ██╗██╗  ██╗███████╗██╗      █████╗  ██████╗ ")
     print("  ██╔══██╗██║╚██╗██╔╝██╔════╝██║     ██╔══██╗██╔═████╗")
     print("  ██████╔╝██║ ╚███╔╝ █████╗  ██║     ╚██████║██║██╔██║")
     print("  ██╔═══╝ ██║ ██╔██╗ ██╔══╝  ██║      ╚═══██║████╔╝██║")
