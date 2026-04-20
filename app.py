@@ -886,6 +886,8 @@ def test_db():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 
+with app.app_context():
+    init_db()
 if __name__ == '__main__':
     init_db()
     print("\n ██████╗ ██╗██╗  ██╗███████╗██╗      █████╗  ██████╗ ")
