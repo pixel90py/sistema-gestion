@@ -48,43 +48,126 @@ def serve_img(filename):
 @app.route('/api/dashboard')
 def api_dashboard():
     conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
     hoy = date.today()
-    mes_ref_row = conn.execute("SELECT strftime('%Y-%m', MAX(fecha)) as ultimo_mes FROM pedidos WHERE estado != 'Cancelado'").fetchone()
+
+    # ⚠️ strftime → TO_CHAR en PostgreSQL
+    cur.execute("""
+        SELECT TO_CHAR(MAX(fecha), 'YYYY-MM') as ultimo_mes
+        FROM pedidos
+        WHERE estado != 'Cancelado'
+    """)
+    mes_ref_row = cur.fetchone()
+
     if mes_ref_row and mes_ref_row['ultimo_mes']:
         y_ref, m_ref = map(int, mes_ref_row['ultimo_mes'].split('-'))
         ref = date(y_ref, m_ref, 1)
     else:
         ref = hoy
+
     mes_ini = f"{ref.year}-{ref.month:02d}-01"
     mes_fin = f"{ref.year}-{ref.month:02d}-{monthrange(ref.year, ref.month)[1]}"
-    ventas_mes = conn.execute("SELECT COALESCE(SUM(pi.cantidad * pi.precio_unit),0) FROM pedidos p JOIN pedido_items pi ON pi.pedido_id = p.id WHERE p.fecha BETWEEN ? AND ? AND p.estado != 'Cancelado'", (mes_ini, mes_fin)).fetchone()[0]
-    gastos_mes = conn.execute("SELECT COALESCE(SUM(monto),0) FROM gastos WHERE fecha BETWEEN ? AND ?", (mes_ini, mes_fin)).fetchone()[0]
-    pedidos_mes = conn.execute("SELECT COUNT(*) FROM pedidos WHERE fecha BETWEEN ? AND ? AND estado != 'Cancelado'", (mes_ini, mes_fin)).fetchone()[0]
-    pendientes = conn.execute("SELECT COUNT(*) FROM pedidos WHERE estado IN ('Pendiente','En Producción')").fetchone()[0]
-    insumos = conn.execute("SELECT id, nombre, stock_minimo FROM insumos WHERE activo=1").fetchall()
+
+    # ⚠️ ? → %s
+    cur.execute("""
+        SELECT COALESCE(SUM(pi.cantidad * pi.precio_unit),0)
+        FROM pedidos p
+        JOIN pedido_items pi ON pi.pedido_id = p.id
+        WHERE p.fecha BETWEEN %s AND %s AND p.estado != 'Cancelado'
+    """, (mes_ini, mes_fin))
+    ventas_mes = cur.fetchone()['coalesce']
+
+    cur.execute("""
+        SELECT COALESCE(SUM(monto),0) as total
+        FROM gastos
+        WHERE fecha BETWEEN %s AND %s
+    """, (mes_ini, mes_fin))
+    gastos_mes = cur.fetchone()['total']
+
+    cur.execute("""
+        SELECT COUNT(*) as total
+        FROM pedidos
+        WHERE fecha BETWEEN %s AND %s AND estado != 'Cancelado'
+    """, (mes_ini, mes_fin))
+    pedidos_mes = cur.fetchone()['total']
+
+    cur.execute("""
+        SELECT COUNT(*) as total
+        FROM pedidos
+        WHERE estado IN ('Pendiente','En Producción')
+    """)
+    pendientes = cur.fetchone()['total']
+
+    cur.execute("SELECT id, nombre, stock_minimo FROM insumos WHERE activo=1")
+    insumos = cur.fetchall()
+
     alertas = []
     for ins in insumos:
         s = stock_actual(conn, ins['id'])
         if s <= ins['stock_minimo']:
-            alertas.append({'nombre': ins['nombre'], 'stock': round(s, 2), 'minimo': ins['stock_minimo']})
-    por_cat = conn.execute("SELECT pr.categoria, COALESCE(SUM(pi.cantidad * pi.precio_unit),0) as total FROM pedidos p JOIN pedido_items pi ON pi.pedido_id = p.id JOIN productos pr ON pr.id = pi.producto_id WHERE p.fecha BETWEEN ? AND ? AND p.estado != 'Cancelado' GROUP BY pr.categoria ORDER BY total DESC", (mes_ini, mes_fin)).fetchall()
+            alertas.append({
+                'nombre': ins['nombre'],
+                'stock': round(s, 2),
+                'minimo': ins['stock_minimo']
+            })
+
+    cur.execute("""
+        SELECT pr.categoria, COALESCE(SUM(pi.cantidad * pi.precio_unit),0) as total
+        FROM pedidos p
+        JOIN pedido_items pi ON pi.pedido_id = p.id
+        JOIN productos pr ON pr.id = pi.producto_id
+        WHERE p.fecha BETWEEN %s AND %s AND p.estado != 'Cancelado'
+        GROUP BY pr.categoria
+        ORDER BY total DESC
+    """, (mes_ini, mes_fin))
+    por_cat = cur.fetchall()
+
     meses_data = []
     for i in range(5, -1, -1):
-        m = ref.month - i; y = ref.year
-        while m <= 0: m += 12; y -= 1
-        ini = f"{y}-{m:02d}-01"; fin = f"{y}-{m:02d}-{monthrange(y, m)[1]}"
-        v = conn.execute("SELECT COALESCE(SUM(pi.cantidad * pi.precio_unit),0) FROM pedidos p JOIN pedido_items pi ON pi.pedido_id = p.id WHERE p.fecha BETWEEN ? AND ? AND p.estado != 'Cancelado'", (ini, fin)).fetchone()[0]
-        g = conn.execute("SELECT COALESCE(SUM(monto),0) FROM gastos WHERE fecha BETWEEN ? AND ?", (ini, fin)).fetchone()[0]
+        m = ref.month - i
+        y = ref.year
+        while m <= 0:
+            m += 12
+            y -= 1
+
+        ini = f"{y}-{m:02d}-01"
+        fin = f"{y}-{m:02d}-{monthrange(y, m)[1]}"
+
+        cur.execute("""
+            SELECT COALESCE(SUM(pi.cantidad * pi.precio_unit),0) as total
+            FROM pedidos p
+            JOIN pedido_items pi ON pi.pedido_id = p.id
+            WHERE p.fecha BETWEEN %s AND %s AND p.estado != 'Cancelado'
+        """, (ini, fin))
+        v = cur.fetchone()['total']
+
+        cur.execute("""
+            SELECT COALESCE(SUM(monto),0) as total
+            FROM gastos
+            WHERE fecha BETWEEN %s AND %s
+        """, (ini, fin))
+        g = cur.fetchone()['total']
+
         meses_data.append({'mes': f"{y}-{m:02d}", 'ventas': v, 'gastos': g})
+
     ganancia = ventas_mes - gastos_mes
     margen = (ganancia / ventas_mes * 100) if ventas_mes > 0 else 0
+
+    cur.close()
     conn.close()
+
     return jsonify({
-        'ventas_mes': ventas_mes, 'gastos_mes': gastos_mes,
-        'ganancia': ganancia, 'margen': round(margen, 1),
-        'pedidos_mes': pedidos_mes, 'pendientes': pendientes,
-        'alertas': alertas, 'por_categoria': rows_to_list(por_cat),
-        'historico': meses_data, 'mes_referencia': f"{ref.year}-{ref.month:02d}",
+        'ventas_mes': ventas_mes,
+        'gastos_mes': gastos_mes,
+        'ganancia': ganancia,
+        'margen': round(margen, 1),
+        'pedidos_mes': pedidos_mes,
+        'pendientes': pendientes,
+        'alertas': alertas,
+        'por_categoria': por_cat,
+        'historico': meses_data,
+        'mes_referencia': f"{ref.year}-{ref.month:02d}",
     })
 
 # ── ALERTAS COUNT (for sidebar badge) ─────────────────────────────────────────
