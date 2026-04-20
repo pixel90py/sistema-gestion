@@ -221,6 +221,9 @@ def init_db():
         orden  INTEGER DEFAULT 0
     )""")
 
+    # Commit todas las tablas antes de continuar
+    conn.commit()
+
     # ── MIGRACIONES (columnas que pueden faltar en DBs existentes) ────────────
     migrations = [
         ("equipos",   "cantidad",         "INTEGER DEFAULT 1"),
