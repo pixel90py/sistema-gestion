@@ -686,11 +686,9 @@ def api_marketing_del(mid):
 @app.route('/api/categorias', methods=['GET'])
 def api_categorias():
     conn = get_db()
-    from_insumos  = [r['categoria'] for r in fetchall(conn, "SELECT DISTINCT categoria FROM insumos ORDER BY categoria")]
-    from_productos = [r['categoria'] for r in fetchall(conn, "SELECT DISTINCT categoria FROM productos ORDER BY categoria")]
-    custom = []
-    try: custom = [r['valor'] for r in fetchall(conn, "SELECT DISTINCT valor FROM categorias ORDER BY orden")]
-    except: pass
+    from_insumos   = [r['categoria'] for r in fetchall(conn, "SELECT DISTINCT categoria FROM insumos WHERE categoria IS NOT NULL ORDER BY categoria")]
+    from_productos = [r['categoria'] for r in fetchall(conn, "SELECT DISTINCT categoria FROM productos WHERE categoria IS NOT NULL ORDER BY categoria")]
+    custom         = [r['valor'] for r in fetchall(conn, "SELECT DISTINCT valor FROM categorias WHERE valor IS NOT NULL ORDER BY orden")]
     all_cats = list(dict.fromkeys(from_insumos + from_productos + custom))
     conn.close()
     return jsonify(all_cats)
