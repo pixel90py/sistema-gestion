@@ -215,6 +215,16 @@ def init_db():
     )""")
 
     c.execute("""
+    CREATE TABLE IF NOT EXISTS ingresos (
+    id          SERIAL PRIMARY KEY,
+    fecha       TEXT NOT NULL,
+    categoria   TEXT NOT NULL,
+    descripcion TEXT,
+    monto       REAL DEFAULT 0,
+    notas       TEXT
+    )""")
+
+    c.execute("""
     CREATE TABLE IF NOT EXISTS categorias (
         id     SERIAL PRIMARY KEY,
         valor  TEXT UNIQUE,
