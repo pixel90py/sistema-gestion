@@ -137,6 +137,11 @@ def api_dashboard():
         WHERE fecha BETWEEN %s AND %s AND estado != 'Cancelado'
     """, (mes_ini, mes_fin))['total']
 
+    ingresos_mes = fetchone(conn, """
+    SELECT COALESCE(SUM(monto),0) as total
+    FROM ingresos WHERE fecha BETWEEN %s AND %s
+    """, (mes_ini, mes_fin))['total']
+
     pendientes = fetchone(conn, """
         SELECT COUNT(*) as total FROM pedidos
         WHERE estado IN ('Pendiente','En Producción')
@@ -174,12 +179,12 @@ def api_dashboard():
         g = fetchone(conn, "SELECT COALESCE(SUM(monto),0) as total FROM gastos WHERE fecha BETWEEN %s AND %s", (ini, fin))['total']
         meses_data.append({'mes': f"{y}-{m:02d}", 'ventas': v, 'gastos': g})
 
-    ganancia = ventas_mes - gastos_mes
+    ganancia = (ventas_mes + ingresos_mes) - gastos_mes
     margen = (ganancia / ventas_mes * 100) if ventas_mes > 0 else 0
     conn.close()
 
     return jsonify({
-        'ventas_mes': ventas_mes, 'gastos_mes': gastos_mes,
+        'ventas_mes': ventas_mes, 'gastos_mes': gastos_mes, 'ingresos_mes': ingresos_mes,
         'ganancia': ganancia, 'margen': round(margen, 1),
         'pedidos_mes': pedidos_mes, 'pendientes': pendientes,
         'alertas': alertas, 'por_categoria': rows_to_list(por_cat),
@@ -677,6 +682,46 @@ def api_marketing_put(mid):
 def api_marketing_del(mid):
     conn = get_db()
     execute(conn, "DELETE FROM marketing WHERE id=%s", (mid,))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
+
+
+# ── INGRESOS ──────────────────────────────────────────────────────────────────
+CATEGORIAS_INGRESOS = ['Inversión','Capital inicial','Préstamo recibido','Ingreso de dinero','Devolución proveedor','Otro']
+
+@app.route('/api/ingresos', methods=['GET'])
+def api_ingresos():
+    conn = get_db()
+    mes = request.args.get('mes')
+    if mes:
+        rows = fetchall(conn, "SELECT * FROM ingresos WHERE TO_CHAR(fecha::date,'YYYY-MM')=%s ORDER BY fecha DESC", (mes,))
+    else:
+        rows = fetchall(conn, "SELECT * FROM ingresos ORDER BY fecha DESC LIMIT 200")
+    conn.close()
+    return jsonify(rows_to_list(rows))
+
+@app.route('/api/ingresos', methods=['POST'])
+def api_ingresos_post():
+    d = request.json; conn = get_db()
+    execute(conn, "INSERT INTO ingresos (fecha,categoria,descripcion,monto,notas) VALUES (%s,%s,%s,%s,%s)",
+        (d['fecha'], d['categoria'], d.get('descripcion',''),
+         float(d.get('monto',0)), d.get('notas','')))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/api/ingresos/<int:iid>', methods=['PUT'])
+def api_ingresos_put(iid):
+    d = request.json; conn = get_db()
+    execute(conn, "UPDATE ingresos SET fecha=%s,categoria=%s,descripcion=%s,monto=%s,notas=%s WHERE id=%s",
+        (d['fecha'], d['categoria'], d.get('descripcion',''),
+         float(d.get('monto',0)), d.get('notas',''), iid))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/api/ingresos/<int:iid>', methods=['DELETE'])
+def api_ingresos_del(iid):
+    conn = get_db()
+    execute(conn, "DELETE FROM ingresos WHERE id=%s", (iid,))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
