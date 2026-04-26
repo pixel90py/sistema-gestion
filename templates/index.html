@@ -378,12 +378,14 @@ async function updateAlertBadge() {
 }
 
 // ── DASHBOARD ─────────────────────────────────────────────────────
-async function renderDashboard() {
-  const d = await api('/api/dashboard');
+async function renderDashboard(mes=null) {
+  const hoy = new Date();
+  const mesActual = mes || `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+  const d = await api(`/api/dashboard?mes=${mesActual}`);
   const MONTHS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   const MONTHS_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-  const [yr, mo] = (d.mes_referencia || '').split('-');
-  const mesLabel = yr ? `${MONTHS_FULL[parseInt(mo)-1]} ${yr}` : 'Mes actual';
+  const [yr, mo] = mesActual.split('-');
+  const mesLabel = `${MONTHS_FULL[parseInt(mo)-1]} ${yr}`;
   const maxV = Math.max(...d.historico.map(m => Math.max(m.ventas, m.gastos)), 1);
   const bars = d.historico.map((m, idx) => {
     const hv = Math.max(Math.round((m.ventas / maxV) * 130), m.ventas > 0 ? 3 : 0);
@@ -406,7 +408,15 @@ async function renderDashboard() {
   const catHTML = d.por_categoria.map((c,i) => `<div class="donut-item">
     <div class="donut-dot" style="background:${catColors[i%4]}"></div>
     <span class="donut-label">${c.categoria}</span><span class="donut-val">${fmt(c.total)}</span></div>`).join('') || `<div style="color:var(--muted);font-size:13px">Sin ventas este mes</div>`;
+
   document.getElementById('content').innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+      <div class="form-label" style="margin:0">Período:</div>
+      <input type="month" id="dash-mes" value="${mesActual}" 
+        style="width:180px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 12px;font-size:14px"
+        onchange="renderDashboard(this.value)">
+      <button class="btn-secondary btn-sm" onclick="renderDashboard()">Hoy</button>
+    </div>
     <div class="kpi-grid">
       <div class="kpi-card cyan"><div class="kpi-label">Ventas — ${mesLabel}</div><div class="kpi-value">${fmt(d.ventas_mes)}</div><div class="kpi-sub">${d.pedidos_mes} pedidos</div></div>
       <div class="kpi-card magenta"><div class="kpi-label">Gastos — ${mesLabel}</div><div class="kpi-value">${fmt(d.gastos_mes)}</div></div>
