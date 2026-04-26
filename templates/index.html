@@ -1441,7 +1441,13 @@ async function modalEditPrestamo(id) {
      <button class="btn-primary" onclick="updatePrestamo(${id})">Actualizar</button>`);
 }
 async function updatePrestamo(id) {
-  await api(`/api/prestamos/${id}`, 'PUT', { ... });
+  await api(`/api/prestamos/${id}`, 'PUT', { 
+    descripcion: v('pr-desc'), entidad: v('pr-ent'),
+    monto_total: numVal('pr-monto'), monto_adjudicado: numVal('pr-adj'),
+    cuotas: v('pr-cuotas'), cuotas_pagadas: v('pr-cpag'), 
+    cuota_mensual: numVal('pr-cuotam'),
+    fecha_inicio: v('pr-fi'), fecha_fin: v('pr-ff') 
+  });
   toast('Préstamo actualizado ✓'); 
   closeModal(); 
   await renderInventario();
