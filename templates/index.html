@@ -1507,7 +1507,6 @@ function makeSortable() {
   document.querySelectorAll('table thead th').forEach(th => {
     if (th.dataset.sortBound) return;
     th.dataset.sortBound = '1';
-    // Add sort arrow if not already there
     if (!th.querySelector('.sort-arrow')) {
       th.innerHTML = th.innerHTML + '<span class="sort-arrow">⇅</span>';
     }
@@ -1516,18 +1515,24 @@ function makeSortable() {
       const tbody = table.querySelector('tbody');
       if (!tbody) return;
       const idx = [...this.parentElement.children].indexOf(this);
-      const rows = [...tbody.querySelectorAll('tr')].filter(r => !r.querySelector('.empty-state'));
+      const rows = [...tbody.querySelectorAll('tr')].filter(r => !r.querySelector('td[colspan]'));
       if (rows.length === 0) return;
       const isAsc = this.classList.contains('sorted-asc');
-      // Clear all
       this.parentElement.querySelectorAll('th').forEach(h => h.classList.remove('sorted-asc','sorted-desc'));
       this.classList.add(isAsc ? 'sorted-desc' : 'sorted-asc');
       rows.sort((a, b) => {
         let aVal = a.children[idx]?.textContent?.trim() || '';
         let bVal = b.children[idx]?.textContent?.trim() || '';
-        // Try numeric (remove ₲, dots, spaces)
-        const aNum = parseFloat(aVal.replace(/[₲\s\.]/g, '').replace(/,/g, '.'));
-        const bNum = parseFloat(bVal.replace(/[₲\s\.]/g, '').replace(/,/g, '.'));
+        // Limpiar formato paraguayo: quitar ₲, puntos de miles, espacios
+        const clean = v => v.replace(/₲/g,'').replace(/\./g,'').replace(/\s/g,'').replace(/,/g,'.');
+        const aNum = parseFloat(clean(aVal));
+        const bNum = parseFloat(clean(bVal));
+        // Intentar fecha YYYY-MM-DD
+        const aDate = Date.parse(aVal);
+        const bDate = Date.parse(bVal);
+        if (!isNaN(aDate) && !isNaN(bDate)) {
+          return isAsc ? bDate - aDate : aDate - bDate;
+        }
         if (!isNaN(aNum) && !isNaN(bNum)) {
           return isAsc ? bNum - aNum : aNum - bNum;
         }
@@ -1541,7 +1546,7 @@ function makeSortable() {
 const origNavigate = navigate;
 navigate = function(page) {
   origNavigate(page);
-  setTimeout(makeSortable, 200);
+  setTimeout(makeSortable, 400);
 };
 function switchTab(btn, tabId) {
   btn.closest('.tabs').querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
