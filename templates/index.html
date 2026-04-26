@@ -1441,16 +1441,24 @@ async function modalEditPrestamo(id) {
      <button class="btn-primary" onclick="updatePrestamo(${id})">Actualizar</button>`);
 }
 async function updatePrestamo(id) {
-  await api(`/api/prestamos/${id}`, 'PUT', { descripcion: v('pr-desc'), entidad: v('pr-ent'),
-    monto_total: numVal('pr-monto'), monto_adjudicado: numVal('pr-adj'),
-    cuotas: v('pr-cuotas'), cuotas_pagadas: v('pr-cpag'), cuota_mensual: numVal('pr-cuotam'),
-    fecha_inicio: v('pr-fi'), fecha_fin: v('pr-ff') });
-  toast('Préstamo actualizado ✓'); closeModal(); renderInventario();
+  await api(`/api/prestamos/${id}`, 'PUT', { ... });
+  toast('Préstamo actualizado ✓'); 
+  closeModal(); 
+  await renderInventario();
+  switchTab(document.querySelector('.tab-btn:nth-child(2)'), 'tab-prestamos');
 }
 async function changeCuotaPrestamo(id, delta) {
-  await api(`/api/prestamos/${id}/cuotas`, 'PATCH', { delta }); renderInventario();
+  await api(`/api/prestamos/${id}/cuotas`, 'PATCH', { delta });
+  await renderInventario();
+  switchTab(document.querySelector('.tab-btn:nth-child(2)'), 'tab-prestamos');
 }
-async function delPrestamo(id) { if (!confirm('¿Eliminar préstamo?')) return; await api(`/api/prestamos/${id}`, 'DELETE'); toast('Eliminado'); renderInventario(); }
+async function delPrestamo(id) { 
+  if (!confirm('¿Eliminar préstamo?')) return; 
+  await api(`/api/prestamos/${id}`, 'DELETE'); 
+  toast('Eliminado'); 
+  await renderInventario();
+  switchTab(document.querySelector('.tab-btn:nth-child(2)'), 'tab-prestamos');
+}
 
 // ── PARÁMETROS ────────────────────────────────────────────────────
 async function renderParametros() {
