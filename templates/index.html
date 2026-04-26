@@ -230,6 +230,7 @@ tr:hover td { background: rgba(0,229,255,.03); }
   <div class="nav-item" onclick="navigate('clientes')"><span class="icon">👥</span><span>Clientes</span></div>
   <div class="nav-item" onclick="navigate('pedidos')"><span class="icon">🛒</span><span>Pedidos</span></div>
   <div class="nav-item" onclick="navigate('gastos')"><span class="icon">💸</span><span>Gastos</span></div>
+  <div class="nav-item" onclick="navigate('ingresos')"><span class="icon">💰</span><span>Ingresos</span></div>
   <div class="nav-item" onclick="navigate('marketing')"><span class="icon">📣</span><span>Marketing</span></div>
   <div class="nav-item" onclick="navigate('stock')" id="nav-stock"><span class="icon">🔄</span><span>Stock</span><span class="nav-badge" id="stock-badge" style="display:none;background:var(--success)">0</span></div>
   <div class="nav-section">Ajustes</div>
@@ -334,6 +335,7 @@ const PAGES = {
   clientes:   { title: 'Clientes', sub: 'Base de datos de clientes' },
   pedidos:    { title: 'Pedidos', sub: 'Historial de pedidos' },
   gastos:     { title: 'Gastos', sub: 'Egresos por categoría' },
+  ingresos:   { title: 'Ingresos', sub: 'Capital e inversiones' },
   marketing:  { title: 'Marketing', sub: 'Campañas y ROI' },
   stock:      { title: 'Stock de Reingreso', sub: 'Productos devueltos' },
   inventario: { title: 'Inventario', sub: 'Amortización de maquinaria' },
@@ -352,9 +354,9 @@ function navigate(page) {
     dashboard: renderDashboard, insumos: renderInsumos,
     consumos: renderConsumos, productos: renderProductos,
     clientes: renderClientes, pedidos: renderPedidos,
-    gastos: renderGastos, marketing: renderMarketing,
-    stock: renderStock, inventario: renderInventario,
-    parametros: renderParametros,
+    gastos: renderGastos, ingresos: renderIngresos, 
+    marketing: renderMarketing, stock: renderStock, 
+    inventario: renderInventario, parametros: renderParametros,
   };
   (renderers[page] || (() => {}))();
   updateAlertBadge();
@@ -418,7 +420,7 @@ async function renderDashboard(mes=null) {
       <button class="btn-secondary btn-sm" onclick="renderDashboard()">Hoy</button>
     </div>
     <div class="kpi-grid">
-      <div class="kpi-card cyan"><div class="kpi-label">Ventas — ${mesLabel}</div><div class="kpi-value">${fmt(d.ventas_mes)}</div><div class="kpi-sub">${d.pedidos_mes} pedidos</div></div>
+      <div class="kpi-card cyan"><div class="kpi-label">Ventas — ${mesLabel}</div><div class="kpi-value">${fmt(d.ventas_mes)}</div><div class="kpi-sub">${d.pedidos_mes} pedidos ${d.ingresos_mes > 0 ? '· +'+fmt(d.ingresos_mes)+' ingresos' : ''}</div></div>
       <div class="kpi-card magenta"><div class="kpi-label">Gastos — ${mesLabel}</div><div class="kpi-value">${fmt(d.gastos_mes)}</div></div>
       <div class="kpi-card lime"><div class="kpi-label">Ganancia — ${mesLabel}</div><div class="kpi-value" style="color:${d.ganancia>=0?'var(--success)':'var(--danger)'}">${fmt(d.ganancia)}</div><div class="kpi-sub">Margen ${d.margen}%</div></div>
       <div class="kpi-card orange"><div class="kpi-label">Pedidos pendientes</div><div class="kpi-value">${d.pendientes}</div><div class="kpi-sub">en producción</div></div>
@@ -1474,6 +1476,93 @@ async function delPrestamo(id) {
   toast('Eliminado'); 
   await renderInventario();
   switchTab(document.querySelector('.tab-btn:nth-child(2)'), 'tab-prestamos');
+}
+
+// ── INGRESOS ──────────────────────────────────────────────────────
+const CATS_INGRESOS = ['Inversión','Capital inicial','Préstamo recibido','Ingreso de dinero','Devolución proveedor','Otro'];
+
+let _ingresosData = [];
+async function renderIngresos() {
+  _ingresosData = await api('/api/ingresos');
+  const totalMes = _ingresosData.filter(i => i.fecha?.slice(0,7) === new Date().toISOString().slice(0,7))
+    .reduce((s,i) => s + (i.monto||0), 0);
+  const totalGeneral = _ingresosData.reduce((s,i) => s + (i.monto||0), 0);
+  const rows = _ingresosData.map(i => `<tr>
+    <td>${i.fecha}</td>
+    <td><span class="badge badge-lime">${i.categoria}</span></td>
+    <td>${i.descripcion||'—'}</td>
+    <td><strong style="color:var(--success)">${fmt(i.monto)}</strong></td>
+    <td style="color:var(--muted);font-size:12px">${i.notas||'—'}</td>
+    <td><div style="display:flex;gap:4px">
+      <button class="btn-sm" style="background:var(--cyan);color:#000" onclick="modalEditIngreso(${i.id})">✏️</button>
+      <button class="btn-danger btn-sm" onclick="delIngreso(${i.id})">🗑</button>
+    </div></td></tr>`).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
+      <div class="card" style="padding:14px">
+        <div class="kpi-label">Ingresos este mes</div>
+        <div style="font-size:22px;font-weight:800;color:var(--success)">${fmt(totalMes)}</div></div>
+      <div class="card" style="padding:14px">
+        <div class="kpi-label">Total histórico</div>
+        <div style="font-size:22px;font-weight:800;color:var(--lime)">${fmt(totalGeneral)}</div></div>
+      <div class="card" style="padding:14px">
+        <div class="kpi-label">Registros</div>
+        <div style="font-size:22px;font-weight:800;color:var(--cyan)">${_ingresosData.length}</div></div>
+    </div>
+    <div class="toolbar">
+      <input class="toolbar-search" type="text" placeholder="🔍 Buscar..." oninput="filterTable(this,'ing-table')">
+      <button class="btn-primary" onclick="modalNuevoIngreso()">+ Registrar ingreso</button>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <table id="ing-table"><thead><tr>
+        <th>Fecha</th><th>Categoría</th><th>Descripción</th><th>Monto</th><th>Notas</th><th>Acciones</th>
+      </tr></thead>
+      <tbody>${rows || emptyState('Sin ingresos registrados')}</tbody></table></div>`;
+}
+
+function ingresoFormHTML(data={}) {
+  return `<div class="form-grid cols2">
+    <div class="form-group"><div class="form-label">Fecha</div>
+      <input id="ing-fecha" type="date" value="${data.fecha||today()}"></div>
+    <div class="form-group"><div class="form-label">Categoría</div>
+      <select id="ing-cat">${CATS_INGRESOS.map(c=>`<option ${data.categoria==c?'selected':''}>${c}</option>`).join('')}</select></div>
+    <div class="form-group" style="grid-column:1/-1"><div class="form-label">Descripción</div>
+      <input id="ing-desc" value="${data.descripcion||''}" placeholder="Ej: Aporte inicial de socio"></div>
+    <div class="form-group"><div class="form-label">Monto (₲)</div>
+      <input id="ing-monto" type="number" value="${data.monto||0}"></div>
+    <div class="form-group"><div class="form-label">Notas</div>
+      <input id="ing-notas" value="${data.notas||''}"></div>
+  </div>`;
+}
+
+function getIngresoData() {
+  return { fecha: v('ing-fecha'), categoria: v('ing-cat'),
+    descripcion: v('ing-desc'), monto: numVal('ing-monto'), notas: v('ing-notas') };
+}
+
+function modalNuevoIngreso() {
+  openModal('Registrar ingreso', ingresoFormHTML(),
+    `<button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn-primary" onclick="saveIngreso()">Guardar</button>`);
+}
+
+async function modalEditIngreso(id) {
+  const ing = _ingresosData.find(x => x.id === id); if (!ing) return;
+  openModal('Editar ingreso', ingresoFormHTML(ing),
+    `<button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn-primary" onclick="saveIngreso(${id})">Actualizar</button>`);
+}
+
+async function saveIngreso(id) {
+  await api(id ? `/api/ingresos/${id}` : '/api/ingresos', id ? 'PUT' : 'POST', getIngresoData());
+  toast('Ingreso guardado ✓'); closeModal(); renderIngresos();
+}
+
+async function delIngreso(id) {
+  if (!confirm('¿Eliminar ingreso?')) return;
+  await api(`/api/ingresos/${id}`, 'DELETE');
+  toast('Eliminado'); renderIngresos();
 }
 
 // ── PARÁMETROS ────────────────────────────────────────────────────
