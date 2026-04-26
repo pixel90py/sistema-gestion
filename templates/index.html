@@ -573,7 +573,7 @@ async function renderProductos() {
     const hasReceta = p.receta.length > 0;
     return `<tr>
       <td><button class="btn-sm btn-secondary" onclick="toggleReceta(this)" style="width:28px;padding:4px">${hasReceta ? '+' : '·'}</button></td>
-      <td><strong style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;cursor:default" title="${p.nombre}">${p.nombre}</strong></td>
+      <td><strong style="cursor:default" title="${p.nombre}">${p.nombre}</strong></td>
       <td><span class="badge badge-${catColor}">${p.categoria}</span></td>
       <td>${p.receta.length} items</td>
       <td style="color:var(--cyan)">${fmt(costo?.costo_materiales||0)}</td>
