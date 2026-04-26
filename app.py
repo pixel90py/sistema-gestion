@@ -106,18 +106,16 @@ def serve_img(filename):
 @app.route('/api/dashboard')
 def api_dashboard():
     conn = get_db()
-    hoy = date.today()
 
-    mes_ref_row = fetchone(conn, """
-    SELECT TO_CHAR(MAX(fecha::date), 'YYYY-MM') as ultimo_mes
-    FROM pedidos WHERE estado != 'Cancelado'
-""")
-
-    if mes_ref_row and mes_ref_row['ultimo_mes']:
-        y_ref, m_ref = map(int, mes_ref_row['ultimo_mes'].split('-'))
-        ref = date(y_ref, m_ref, 1)
+    mes_param = request.args.get('mes')
+    if mes_param:
+        try:
+            y_ref, m_ref = map(int, mes_param.split('-'))
+            ref = date(y_ref, m_ref, 1)
+        except:
+            ref = date.today()
     else:
-        ref = hoy
+        ref = date.today()
 
     mes_ini = f"{ref.year}-{ref.month:02d}-01"
     mes_fin = f"{ref.year}-{ref.month:02d}-{monthrange(ref.year, ref.month)[1]}"
